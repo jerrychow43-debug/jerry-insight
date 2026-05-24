@@ -1,0 +1,23 @@
+{
+    "user_name": "Jerry",
+    "monthly_budget": 2000.0,
+    "current_surplus": 79.0,
+    "fixed_expenses": {
+        "饮食": 1200,
+        "话费交通": 300
+    },
+    "recent_purchases": [
+        "维他柠檬茶",
+        "蓝牙耳机",
+        "stanley杯子",
+        "stanely杯子",
+        "一瓶500ml可乐",
+        "一瓶500mlkele",
+        "vape花露水",
+        "logi鼠标",
+        "红米耳机",
+        "理肤泉B5面霜",
+        "优色林舒安霜",
+        "椰子水"
+    ]
+}
