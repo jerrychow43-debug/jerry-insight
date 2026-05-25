@@ -1,2 +1,4 @@
 .env
+memory_bank/
+jerry_profile.json
 __pycache__/
