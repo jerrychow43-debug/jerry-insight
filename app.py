@@ -10,20 +10,33 @@ import streamlit as st
 from openai import OpenAI
 from concurrent.futures import ThreadPoolExecutor
 
-# ==========================================================
-# 自动依赖补丁：确保 bs4 和 requests 环境万无一失
-# ==========================================================
-try:
-    from bs4 import BeautifulSoup
-except ModuleNotFoundError:
-    print("🛸 监测到缺少 bs4 依赖，正在自动为你下载安装...")
-    os.system("pip install beautifulsoup4 -i https://pypi.tuna.tsinghua.edu.cn/simple")
-    from bs4 import BeautifulSoup
+# =====================================================================
+# 🔒 1. 初始化页面配置与面试官资产风控访问锁
+# =====================================================================
+st.set_page_config(page_title="Jerry-Insight Pro", layout="wide")
 
-# ==========================================================
-# 初代路由、去噪组件与新引入的状态机/爬虫组件
-# ==========================================================
-from core.router import classify_intent, clean_query_to_entity 
+if 'authenticated' not in st.session_state:
+    st.session_state['authenticated'] = False
+
+if not st.session_state['authenticated']:
+    st.title("🛡️ Jerry-Insight Pro 访问鉴权")
+    st.markdown("欢迎来到 Jerry-Insight 工业级消费风控 Agent 引擎演示现场。")
+    input_password = st.text_input("请输入面试官专属访问令牌 (Token)：", type="password")
+    
+    # 专属密码设置
+    if input_password == "jerry2026":
+        st.session_state['authenticated'] = True
+        st.success("验证通过，正在初始化铁算盘引擎...")
+        st.rerun()
+    elif input_password:
+        st.error("令牌错误，请联系作者获取正确访问权限。")
+    st.stop()  # 未验证通过时，强行阻断后续所有核心组件和业务逻辑的加载
+
+# =====================================================================
+# 🛠️ 2. 初代路由、去噪组件与新引入的状态机/爬虫组件
+# =====================================================================
+from bs4 import BeautifulSoup  # BeautifulSoup 导入直接放这里
+from core.router import classify_intent, clean_query_to_entity
 from core.memory_manager import AdvancedMemoryManager
 from core.hybrid_retriever import JaccardHybridRetriever
 from tools.mcp_server import JerryMcpServer
