@@ -116,7 +116,3 @@ TAVILY_API_KEY="your_tavily_api_key"
 ```
 streamlit run main.py
 ```
-
-```
-
-```
