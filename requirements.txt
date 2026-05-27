@@ -1,0 +1,8 @@
+streamlit
+chromadb
+openai
+beautifulsoup4
+requests
+pandas
+numpy
+tavily-python
