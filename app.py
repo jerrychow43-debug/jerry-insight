@@ -15,24 +15,12 @@ from concurrent.futures import ThreadPoolExecutor
 # =====================================================================
 st.set_page_config(page_title="Jerry-Insight Pro v3.5+", layout="wide", page_icon="🛡️")
 
-if 'authenticated' not in st.session_state:
-    st.session_state['authenticated'] = False
-
-if not st.session_state['authenticated']:
-    st.title("🛡️ Jerry-Insight Pro 访问鉴权")
-    input_password = st.text_input("请输入访问令牌 (Token)：", type="password")
-    if input_password == "jerry2026":
-        st.session_state['authenticated'] = True
-        st.rerun()
-    st.stop()
-
-# 初始化核心生命周期变量
 if "active_query" not in st.session_state:
     st.session_state["active_query"] = None
 if "has_searched" not in st.session_state:
     st.session_state["has_searched"] = False
-if "expense_recorded" not in st.session_state:
-    st.session_state["expense_recorded"] = False
+if "just_recorded" not in st.session_state:
+    st.session_state["just_recorded"] = False
 
 # =====================================================================
 # 🛠️ 2. 核心组件与通知组件引入
@@ -51,8 +39,19 @@ from data.sql_db import save_audit_log
 from dotenv import load_dotenv
 
 load_dotenv()
-WECHAT_TOKEN = st.secrets.get("PUSH_TOKEN", os.getenv("PUSH_TOKEN"))
-DINGTALK_TOKEN = st.secrets.get("DING_WEBHOOK", os.getenv("DING_WEBHOOK"))
+
+# 🛡️ 【重大修复：强效对齐云端 Secrets 令牌】
+# 优先读取云端配置，并进行数据清洗以绝后患
+RAW_WECHAT_TOKEN = st.secrets.get("PUSH_TOKEN", "")
+RAW_DING_WEBHOOK = st.secrets.get("DING_WEBHOOK", "")
+
+# 适配钉钉：如果用户填了完整URL，自动把里面的纯 access_token 剥离出来适配底层通知类
+if "access_token=" in RAW_DING_WEBHOOK:
+    DINGTALK_TOKEN = RAW_DING_WEBHOOK.split("access_token=")[1].split("&")[0].strip()
+else:
+    DINGTALK_TOKEN = RAW_DING_WEBHOOK.strip()
+
+WECHAT_TOKEN = RAW_WECHAT_TOKEN.strip()
 
 try:
     from tools.notify import push_wechat, push_dingtalk
@@ -97,14 +96,13 @@ def update_profile_balance(amount, item_name):
 
 mcp_gateway = JerryMcpServer(update_profile_balance, FILE_LOCK)
 
-api_key = st.secrets.get("DEEPSEEK_API_KEY", os.getenv("DEEPSEEK_API_KEY"))
+api_key = st.secrets.get("DEEPSEEK_API_KEY", "")
 base_url = st.secrets.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 openai_client = OpenAI(api_key=api_key, base_url=base_url)
 
 if 'GLOBAL_MEMORY_MANAGER' not in st.session_state: st.session_state['GLOBAL_MEMORY_MANAGER'] = AdvancedMemoryManager(openai_client)
 if 'SHORT_TERM_MEMORY' not in st.session_state: st.session_state['SHORT_TERM_MEMORY'] = []
 if 'LAST_AUDIT' not in st.session_state: st.session_state['LAST_AUDIT'] = None
-if 'PENDING_NOTIFY' not in st.session_state: st.session_state['PENDING_NOTIFY'] = None
 
 def native_diversity_rerank(info_blocks):
     if not info_blocks: return []
@@ -115,7 +113,7 @@ def native_diversity_rerank(info_blocks):
     return unique_blocks[:4]
 
 # ==========================================================
-# 🌟 JerryAgentHarness 引擎
+# 🌟 JerryAgentHarness 状态机引擎
 # ==========================================================
 class JerryAgentHarness:
     def __init__(self, max_steps=4):
@@ -148,11 +146,9 @@ class JerryAgentHarness:
                 if status_widget: status_widget.write(f"🧠 [Harness 状态机] 推理寻优中 ({step}/{self.max_steps})...")
                 response = self.client.chat.completions.create(model=self.model, messages=conversation_history, temperature=0.3)
                 raw_output = response.choices[0].message.content.strip()
-                
                 json_match = re.search(r'\{.*\}', raw_output, re.DOTALL)
                 clean_json_str = json_match.group(0) if json_match else raw_output
                 parsed_json = json.loads(clean_json_str)
-                
                 if parsed_json.get("action") == "Final Answer": return parsed_json.get("action_input")
                 elif parsed_json.get("action") == "Call_Web_Search":
                     _, search_feedback_text, _ = web_search_pro(parsed_json.get("action_input"))
@@ -164,6 +160,7 @@ class JerryAgentHarness:
 
 def async_push_notification(content, title=None):
     try:
+        # 使用过滤提纯后的纯净 Token 强制发起请求
         if WECHAT_TOKEN: push_wechat(content)
         if DINGTALK_TOKEN: push_dingtalk(content, title=title)
     except Exception as e: print(f"后台通知发送失败: {e}")
@@ -205,15 +202,44 @@ def run_fsm_scout_pipeline(query, status_widget):
 # ==========================================================
 # UI 渲染层
 # ==========================================================
+# 🛠️ 【完美带回】：保留全部侧边栏结构，通过读取历史向量自动分流黑白名单箱
 with st.sidebar:
     st.header("🕵️ Jerry-Insight 调度中心")
     st.write("---")
+    st.subheader("📊 铁算盘·资产风控中心")
+    try:
+        all_mems = memory_collection.get()
+        item_status_map = {}
+        if all_mems and all_mems['documents']:
+            for doc in all_mems['documents']:
+                part, status_type = None, None
+                if "强行确认购买了关于'" in doc or "[已买入]" in doc:
+                    part = doc.split("关于'")[1].split("'")[0] if "关于'" in doc else doc
+                    status_type = "WHITELIST"
+                elif "关于'" in doc or "[已拦截]" in doc:
+                    part = doc.split("关于'")[1].split("'")[0] if "关于'" in doc else doc
+                    status_type = "BLACKLIST"
+                if part:
+                    item_status_map[part.strip().replace("'", "").replace('"', "")] = status_type
+        blacklist = [k for k, v in item_status_map.items() if v == "BLACKLIST"]
+        whitelist = [k for k, v in item_status_map.items() if v == "WHITELIST"]
+        
+        with st.expander("🔴 查看被强制拦截的坑位", expanded=True):
+            if blacklist:
+                for item in blacklist[-5:]: st.markdown(f"❌ `{item}`")
+            else: st.caption("暂无历史拦截记录")
+        with st.expander("🟢 查看已安全放行的好物", expanded=True):
+            if whitelist:
+                for item in whitelist[-5:]: st.markdown(f"✅ `{item}`")
+            else: st.caption("暂无历史放行记录")
+    except: st.caption("数据加载中...")
+
     if st.button("🧹 清空当前聊天会话"):
         st.session_state['SHORT_TERM_MEMORY'] = []
         st.session_state['LAST_AUDIT'] = None
         st.session_state["active_query"] = None
         st.session_state["has_searched"] = False
-        st.session_state["expense_recorded"] = False
+        st.session_state["just_recorded"] = False
         st.rerun()
 
 st.title("🛡️ Jerry-Insight Pro v3.5+")
@@ -224,111 +250,124 @@ chat_query = st.chat_input("输入商品名称，开始资产风控审计...")
 if chat_query and chat_query.strip():
     st.session_state["active_query"] = chat_query.strip()
     st.session_state["has_searched"] = True
-    st.session_state["expense_recorded"] = False  # 新一轮查询重置记账状态
+    st.session_state["just_recorded"] = False
     st.rerun()
 
 current_task = st.session_state["active_query"]
 
-# 🚀 【安全卫士阻断欢迎页】
-if not st.session_state["has_searched"] or not current_task:
+if (not st.session_state["has_searched"] or not current_task) and not st.session_state["just_recorded"]:
     st.info("💡 欢迎来到 Jerry-Insight 工业级消费风控中心！请在下方输入框中键入你想审计的设备名称并敲击回车。")
     st.stop()
 
-# 主流渲染逻辑
-with st.chat_message("user"): 
-    st.write(current_task)
+if current_task:
+    with st.chat_message("user"): 
+        st.write(current_task)
 
-with st.chat_message("assistant"):
-    status = st.status("🛸 Jerry-Scout 正在通过 FSM 状态机进行多维调度...", expanded=True)
-    try:
-        raw_answer, clean_keyword, info_blocks, price_table_data, crawler_results = run_fsm_scout_pipeline(current_task, status)
-        
-        if raw_answer == "INVALID_INTENT":
-            status.update(label="🚨 监测到非业务输入/无效安全隐患。", state="error", expanded=False)
-            st.error("请输入有效的业务商品进行审计。")
-            st.stop()
+    with st.chat_message("assistant"):
+        status = st.status("🛸 Jerry-Scout 正在通过 FSM 状态机进行多维调度...", expanded=True)
+        try:
+            raw_answer, clean_keyword, info_blocks, price_table_data, crawler_results = run_fsm_scout_pipeline(current_task, status)
             
-        status.update(label="🚀 FSM 流程闭合！情报与定向爬虫数据同步完毕！", state="complete", expanded=False)
-        
-        # 🟢 【核心修复】：链接与情报来源展示
-        if info_blocks:
-            st.markdown("### 🌐 Jerry-Scout 全网核心情报来源与存证链接")
-            for idx, block in enumerate(info_blocks):
-                text_snippet, source_url, rerank_score = block
-                st.markdown(f"**情报源 [{idx+1}]** ｜ 匹配度分值: `{rerank_score}`")
-                st.caption(f"内容摘要: {text_snippet[:150]}...")
-                if source_url: st.markdown(f"🔗 [点击查看原始存证网页]({source_url})")
-                st.write("---")
+            if raw_answer == "INVALID_INTENT":
+                status.update(label="🚨 监测到非业务输入。", state="error", expanded=False)
+                st.error("请输入有效的业务商品进行审计。")
+                st.stop()
+                
+            status.update(label="🚀 FSM 流程闭合！情报与定向爬虫数据同步完毕！", state="complete", expanded=False)
+            
+            # 🟢 【完美带回】：完全保留全网核心情报来源与存证链接展示
+            if info_blocks:
+                st.markdown("### 🌐 Jerry-Scout 全网核心情报来源与存证链接")
+                for idx, block in enumerate(info_blocks):
+                    text_snippet, source_url, rerank_score = block
+                    st.markdown(f"**情报源 [{idx+1}]** ｜ 匹配度分值: `{rerank_score}`")
+                    st.caption(f"内容摘要: {text_snippet[:150]}...")
+                    if source_url: st.markdown(f"🔗 [点击查看原始存证网页]({source_url})")
+                    st.write("---")
 
-        # 🟢 【核心修复】：比价盘口展示
-        if (price_table_data is not None and len(price_table_data) > 0) or crawler_results:
-            st.markdown("### 📊 Jerry-Scout 监测到全网全渠道实时比价盘口")
-            parsed_data = []
-            if crawler_results:
-                for spider_item in crawler_results:
-                    parsed_data.append({"🛒 渠道平台": f"🔥 {spider_item['platform']}", "💰 实时报价与情报": spider_item['price_info'], "🔗 原始链接": spider_item['source']})
-            st.dataframe(pd.DataFrame(parsed_data), hide_index=True)
+            # 🟢 【完美带回】：完全保留全网全渠道实时比价盘口展示
+            if (price_table_data is not None and len(price_table_data) > 0) or crawler_results:
+                st.markdown("### 📊 Jerry-Scout 监测到全网全渠道实时比价盘口")
+                parsed_data = []
+                if crawler_results:
+                    for spider_item in crawler_results:
+                        parsed_data.append({"🛒 渠道平台": f"🔥 {spider_item['platform']}", "💰 实时报价与情报": spider_item['price_info'], "🔗 原始链接": spider_item['source']})
+                st.dataframe(pd.DataFrame(parsed_data), hide_index=True)
 
-        # 报告正文
-        display_answer = raw_answer.split("PRICE_DATA:")[0] if "PRICE_DATA:" in raw_answer else raw_answer
-        st.markdown("### 🛡️ Jerry-Insight 深度审计报告")
-        st.markdown(display_answer)
+            # 报告正文
+            display_answer = raw_answer.split("PRICE_DATA:")[0] if "PRICE_DATA:" in raw_answer else raw_answer
+            st.markdown("### 🛡️ Jerry-Insight 深度审计报告")
+            st.markdown(display_answer)
 
-        # 价格兜底解析
-        detected_price = 3.5  # 针对可乐默认
-        if "PRICE_DATA:" in raw_answer:
-            try: detected_price = float(json.loads(raw_answer.split("PRICE_DATA:")[1].strip())["estimated_price"])
-            except: pass
-        
-        # 锁进缓存凭证
-        if not st.session_state["expense_recorded"]:
+            # 价格解析机制
+            detected_price = 3.5
+            if "PRICE_DATA:" in raw_answer:
+                try: detected_price = float(json.loads(raw_answer.split("PRICE_DATA:")[1].strip())["estimated_price"])
+                except: pass
+            
             st.session_state['LAST_AUDIT'] = {"price": detected_price, "item": clean_keyword, "display_answer": display_answer}
 
-    except Exception as e:
-        status.update(label=f"❌ 流程运行异常: {str(e)}", state="error", expanded=False)
-        st.error(f"引擎报错: {e}")
+        except Exception as e:
+            status.update(label=f"❌ 流程运行异常: {str(e)}", state="error", expanded=False)
+            st.error(f"引擎报错: {e}")
 
 # ==========================================================
-# 📊 资产闭环记账阶段 (修正了生命周期的阻塞)
+# 📊 资产闭环记账阶段（新增不扣钱的分流处理机制）
 # ==========================================================
-if st.session_state['LAST_AUDIT'] and not st.session_state["expense_recorded"]:
+if st.session_state['LAST_AUDIT']:
     st.write("---")
     audit_item = st.session_state['LAST_AUDIT']["item"]
     audit_price = st.session_state['LAST_AUDIT']["price"]
     audit_report = st.session_state['LAST_AUDIT']["display_answer"]
     
-    if st.button(f"🪙 确认记入账本 (扣减 {audit_price}元)", type="primary"):
-        # 调用记账核心 MCP 逻辑
-        rpc_payload = json.dumps({
-            "jsonrpc": "2.0", "method": "tools/call",
-            "params": {"name": "record_expense", "arguments": {"amount": audit_price, "item_name": audit_item}},
-            "id": 1
-        })
-        mcp_gateway.handle_json_rpc(rpc_payload)
-        
-        # 触发双通道通知推送 (保证微信和钉钉能准确捕获)
-        current_profile = get_dynamic_profile()
-        short_conclusion = "建议避坑" if "建议避坑" in audit_report else "持币观望"
-        
-        notify_content = (
-            f"### 🛡️ 铁算盘·消费审计资产扣减报告\n"
-            f"- **买入明细**：`{audit_item}`\n"
-            f"- **消费扣减**：`- {audit_price} 元`\n"
-            f"- **审计结论**：**{short_conclusion}**\n\n"
-            f"---\n"
-            f"### ⚠️ 实时风险控制面板\n"
-            f"- **当前卡内剩余流动资金**：**{current_profile['current_surplus']} 元**\n"
-            f"- **资产风控提示**：当前账户严重超支，系统已强制同步财务预警。"
-        )
-        st.session_state['ASYNC_EXECUTOR'].submit(async_push_notification, notify_content, "⚠️ 资产账户变动联合报告")
-        
-        # 更新状态锁，防止 st.stop 断流
-        st.session_state["expense_recorded"] = True
-        st.session_state['LAST_AUDIT'] = None
-        st.success(f"✅ 成功记账！已从流动资金中扣除 {audit_price} 元。")
-        st.rerun()
+    # 创建左右双排列排版按钮组件
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # 🟢 选项一：扣钱流（进入绿色放行箱）
+        if st.button(f"🪙 确认记入账本 (扣减 {audit_price}元)", type="primary", use_container_width=True):
+            # 1. 核心 MCP 扣款
+            rpc_payload = json.dumps({"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "record_expense", "arguments": {"amount": audit_price, "item_name": audit_item}}, "id": 1})
+            mcp_gateway.handle_json_rpc(rpc_payload)
+            
+            # 2. 存入长期记忆库向量并指定打标状态为放行
+            try:
+                memory_collection.add(documents=[f"Jerry最终确认购买了关于'{audit_item}'的商品。[已买入]"], ids=[f"pass_{int(time.time())}"])
+                save_audit_log(current_task, audit_report[:50])
+            except: pass
+            
+            # 3. 后台发送扣账报告通知
+            current_profile = get_dynamic_profile()
+            notify_content = f"### 🛡️ 消费审计资产扣减报告\n- **买入明细**：`{audit_item}`\n- **消费扣减**：`- {audit_price} 元`\n- **当前卡内剩余资金**：**{current_profile['current_surplus']} 元**"
+            st.session_state['ASYNC_EXECUTOR'].submit(async_push_notification, notify_content, "⚠️ 资产变动放行报告")
+            
+            # 4. 洗刷生命周期标志位并拉回页面刷新
+            st.session_state["just_recorded"] = True
+            st.session_state['LAST_AUDIT'] = None
+            st.session_state['active_query'] = None 
+            st.session_state["has_searched"] = False
+            st.rerun()
 
-# 当扣账成功后，在最下方持久显示扣除成功后的状态提示
-if st.session_state["expense_recorded"]:
-    st.write("---")
-    st.success("💰 铁算盘已完成该商品的资产账目核销，当前大盘资金余额已实时更新。")
+    with col2:
+        # 🔴 选项二：不扣钱流（进入红色拦截箱）
+        if st.button(f"🙅‍♂️ 听从劝阻 (放弃购买，不扣钱)", type="secondary", use_container_width=True):
+            # 1. 直接存入长期记忆库向量，指定打标状态为拦截隔离
+            try:
+                memory_collection.add(documents=[f"Jerry听从了风控审计官对于'{audit_item}'的购买决策。建议避坑，[已拦截]"], ids=[f"block_{int(time.time())}"])
+                save_audit_log(current_task, "用户选择听从风控劝阻，未产生账单扣款。")
+            except: pass
+            
+            # 2. 触发风控拦截通知大盘
+            notify_content = f"### 🛡️ 铁算盘·风控拦截防线触发\n- **拦截商品**：`{audit_item}`\n- **省下金额**：`+ {audit_price} 元`\n- **拦截结果**：用户成功被系统风控说服，已取消本次不合理消费！"
+            st.session_state['ASYNC_EXECUTOR'].submit(async_push_notification, notify_content, "🚨 消费风控成功拦截报告")
+            
+            # 3. 释放锁并刷新页面
+            st.session_state["just_recorded"] = True
+            st.session_state['LAST_AUDIT'] = None
+            st.session_state['active_query'] = None 
+            st.session_state["has_searched"] = False
+            st.rerun()
+
+if st.session_state["just_recorded"]:
+    st.success("💰 铁算盘已自动同步最新决策至向量知识库，左侧风控历史拦截看板已实时对齐更新。")
+    st.session_state["just_recorded"] = False
