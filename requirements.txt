@@ -3,9 +3,9 @@ openai
 beautifulsoup4
 requests
 pandas
-numpy
 tavily-python
-# --- 🛡️ 锁定这三个版本，彻底解决 protobuf 签名打架冲突 ---
+# --- 🛡️ 终极版本版本铁锁网，彻底按死所有底层冲突 ---
+numpy==1.26.4
 chromadb==0.4.24
 protobuf==4.25.3
 opentelemetry-api==1.23.0
