@@ -316,84 +316,88 @@ if current_task:
     with st.chat_message("user"): 
         st.write(current_task)
 
-    with st.chat_message("assistant"):
-        status = st.status("🛸 Jerry-Scout 正在通过 FSM 状态机进行多维调度...", expanded=True)
-        try:
-            raw_answer, clean_keyword, info_blocks, price_table_data, crawler_results, long_term_context = run_fsm_scout_pipeline(current_task, status)
-            
-            if raw_answer == "INVALID_INTENT":
-                status.update(label="🚨 监测到非业务输入。", state="error", expanded=False)
-                st.error("请输入有效的业务商品进行审计。")
-                st.stop()
+    # 🎯【安全开关修复点】：如果刚刚发生了账本记录（just_recorded == True），则切断下方所有情报和报告的渲染
+    if not st.session_state.get("just_recorded", False):
+        with st.chat_message("assistant"):
+            status = st.status("🛸 Jerry-Scout 正在通过 FSM 状态机进行多维调度...", expanded=True)
+            try:
+                raw_answer, clean_keyword, info_blocks, price_table_data, crawler_results, long_term_context = run_fsm_scout_pipeline(current_task, status)
                 
-            status.update(label="🚀 FSM 流程闭合！情报与定向爬虫数据同步完毕！", state="complete", expanded=False)
-            
-            st.markdown("### 🌐 Jerry-Scout 全网核心情报来源与存证链接")
-            for idx in range(4):
-                if info_blocks and idx < len(info_blocks):
-                    text_snippet, source_url, rerank_score = info_blocks[idx]
-                else:
-                    text_snippet = f"对齐商品 【{clean_keyword}】 的多渠道行情分布与全网存证基准线线索。"
-                    source_url = f"https://search.smzdm.com/?s={clean_keyword}"
-                    rerank_score = 0.88 - (idx * 0.04)
+                if raw_answer == "INVALID_INTENT":
+                    status.update(label="🚨 监测到非业务输入。", state="error", expanded=False)
+                    st.error("请输入有效的业务商品进行审计。")
+                    st.stop()
                     
-                st.markdown(f"**情报源 [{idx+1}]** ｜ 匹配度分值: `{round(float(rerank_score), 4)}`")
-                st.caption(f"内容摘要: {text_snippet[:150]}...")
-                if source_url: 
-                    st.markdown(f"🔗 [点击查看原始存证网页]({source_url})")
-                st.write("---")
-
-            st.markdown("### 📌 Jerry-Scout 关联历史输入知识库线索")
-            if long_term_context and len(long_term_context.strip()) > 10:
-                st.info(f"🔍 铁算盘为你捞出了关于【{clean_keyword}】的历史输入关联记录快照：\n\n{long_term_context}")
-            else:
-                st.caption(f"💡 历史拦截库中暂未匹配到针对“{clean_keyword}”的历史指纹。已自动将本次输入【{current_task}】作为全新存证关联词录入系统。")
-
-            st.markdown("### 📊 Jerry-Scout 监测到全网全渠道实时比价盘口")
-            parsed_data = []
-            
-            if price_table_data:
-                try:
-                    if isinstance(price_table_data, list): parsed_data.extend(price_table_data)
-                    elif isinstance(price_table_data, str): parsed_data.extend(json.loads(price_table_data.replace("'", '"')))
-                except: pass
-
-            if crawler_results:
-                for spider_item in crawler_results:
-                    parsed_data.append({"平台": f"🔥 {spider_item['platform']}", "参考报价/情报说明": spider_item['price_info'], "数据出处": spider_item['source']})
-            
-            if not parsed_data:
-                parsed_data = [
-                    {"平台": "官方电商渠道", "参考报价/情报说明": f"全网均价约大盘浮动 (针对 {clean_keyword})", "数据出处": "https://www.taobao.com"},
-                    {"平台": "基础核销通道", "参考报价/情报说明": "实时大盘均价核算中", "数据出处": "本地商超端"}
-                ]
-            
-            df = pd.DataFrame(parsed_data)
-            df = df.rename(columns={"平台": "🛒 渠道平台", "参考报价/情报说明": "💰 实时报价与情报", "数据出处": "🔗 原始链接"})
-            st.dataframe(df, hide_index=True)
-
-            display_answer = raw_answer.split("PRICE_DATA:")[0] if "PRICE_DATA:" in raw_answer else raw_answer
-            st.markdown("### 🛡️ Jerry-Insight 深度审计报告")
-            st.markdown(display_answer)
-
-            # 🛠️ 【价格精准提取修复点】：用正则直接提取 estimated_price 后面的数值，防止 JSON 失败降级到 3.5 元
-            detected_price = 3.5
-            if "PRICE_DATA:" in raw_answer:
-                try: 
-                    price_part = raw_answer.split("PRICE_DATA:")[1].strip()
-                    price_match = re.search(r'"estimated_price"\s*:\s*([0-9.]+)', price_part)
-                    if price_match:
-                        detected_price = float(price_match.group(1))
+                status.update(label="🚀 FSM 流程闭合！情报与定向爬虫数据同步完毕！", state="complete", expanded=False)
+                
+                st.markdown("### 🌐 Jerry-Scout 全网核心情报来源与存证链接")
+                for idx in range(4):
+                    if info_blocks and idx < len(info_blocks):
+                        text_snippet, source_url, rerank_score = info_blocks[idx]
                     else:
-                        detected_price = float(json.loads(price_part)["estimated_price"])
-                except: 
-                    pass
-            
-            st.session_state['LAST_AUDIT'] = {"price": detected_price, "item": clean_keyword, "display_answer": display_answer}
+                        text_snippet = f"对齐商品 【{clean_keyword}】 的多渠道行情分布与全网存证基准线线索。"
+                        source_url = f"https://search.smzdm.com/?s={clean_keyword}"
+                        rerank_score = 0.88 - (idx * 0.04)
+                        
+                    st.markdown(f"**情报源 [{idx+1}]** ｜ 匹配度分值: `{round(float(rerank_score), 4)}`")
+                    st.caption(f"内容摘要: {text_snippet[:150]}...")
+                    if source_url: 
+                        st.markdown(f"🔗 [点击查看原始存证网页]({source_url})")
+                    st.write("---")
 
-        except Exception as e:
-            status.update(label=f"❌ 流程运行异常: {str(e)}", state="error", expanded=False)
-            st.error(f"引擎报错: {e}")
+                st.markdown("### 📌 Jerry-Scout 关联历史输入知识库线索")
+                if long_term_context and len(long_term_context.strip()) > 10:
+                    st.info(f"🔍 铁算盘为你捞出了关于【{clean_keyword}】的历史输入关联记录快照：\n\n{long_term_context}")
+                else:
+                    st.caption(f"💡 历史拦截库中暂未匹配到针对“{clean_keyword}”的历史指纹。已自动将本次输入【{current_task}】作为全新存证关联词录入系统。")
+
+                st.markdown("### 📊 Jerry-Scout 监测到全网全渠道实时比价盘口")
+                parsed_data = []
+                
+                if price_table_data:
+                    try:
+                        if isinstance(price_table_data, list): parsed_data.extend(price_table_data)
+                        elif isinstance(price_table_data, str): parsed_data.extend(json.loads(price_table_data.replace("'", '"')))
+                    except: pass
+
+                if crawler_results:
+                    for spider_item in crawler_results:
+                        parsed_data.append({"平台": f"🔥 {spider_item['platform']}", "参考报价/情报说明": spider_item['price_info'], "数据出处": spider_item['source']})
+                
+                if not parsed_data:
+                    parsed_data = [
+                        {"平台": "官方电商渠道", "参考报价/情报说明": f"全网均价约大盘浮动 (针对 {clean_keyword})", "数据出处": "https://www.taobao.com"},
+                        {"平台": "基础核销通道", "参考报价/情报说明": "实时大盘均价核算中", "数据出处": "本地商超端"}
+                    ]
+                
+                df = pd.DataFrame(parsed_data)
+                df = df.rename(columns={"平台": "🛒 渠道平台", "参考报价/情报说明": "💰 实时报价与情报", "数据出处": "🔗 原始链接"})
+                st.dataframe(df, hide_index=True)
+
+                display_answer = raw_answer.split("PRICE_DATA:")[0] if "PRICE_DATA:" in raw_answer else raw_answer
+                st.markdown("### 🛡️ Jerry-Insight 深度审计报告")
+                st.markdown(display_answer)
+
+                # 🛠️ 【精准价格解析修复点】：从后往前(rsplit)定位真正的 JSON 块，并用强力正则吸取数值，彻底告别 3.5 元硬核兜底
+                detected_price = 3.5
+                if "PRICE_DATA:" in raw_answer:
+                    try: 
+                        price_part = raw_answer.rsplit("PRICE_DATA:", 1)[1].strip()
+                        price_match = re.search(r'"estimated_price"\s*:\s*([0-9.]+)', price_part)
+                        if price_match:
+                            detected_price = float(price_match.group(1))
+                        else:
+                            clean_json_match = re.search(r'\{.*\}', price_part, re.DOTALL)
+                            json_str = clean_json_match.group(0) if clean_json_match else price_part
+                            detected_price = float(json.loads(json_str)["estimated_price"])
+                    except Exception as p_err: 
+                        print(f"⚠️ 价格精细化抽取未命中，触发默认兜底: {p_err}")
+                
+                st.session_state['LAST_AUDIT'] = {"price": detected_price, "item": clean_keyword, "display_answer": display_answer}
+
+            except Exception as e:
+                status.update(label=f"❌ 流程运行异常: {str(e)}", state="error", expanded=False)
+                st.error(f"引擎报错: {e}")
 
 # ==========================================================
 # 📊 6. 核心资产卡点修复与同步通知触发
@@ -437,7 +441,7 @@ if st.session_state['LAST_AUDIT']:
             
             global_pure_async_notify(None, None, msg_content)
             
-            # 🧼 【彻底蒸发界面修复点】：强制清空当前状态，阻断页面二次渲染旧报告，杜绝反复扣钱
+            # 🧼 【画面彻底净化】：重置所有核心审计变量
             st.session_state["active_query"] = None
             st.session_state["has_searched"] = False
             st.session_state['LAST_AUDIT'] = None
@@ -465,7 +469,7 @@ if st.session_state['LAST_AUDIT']:
             
             global_pure_async_notify(None, None, msg_content)
             
-            # 🧼 【彻底蒸发界面修复点】：强制清空当前状态，阻断页面二次渲染旧报告
+            # 🧼 【画面彻底净化】：重置所有核心审计变量
             st.session_state["active_query"] = None
             st.session_state["has_searched"] = False
             st.session_state['LAST_AUDIT'] = None
