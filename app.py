@@ -11,6 +11,11 @@ import requests
 from openai import OpenAI
 from concurrent.futures import ThreadPoolExecutor
 
+# 新增邮件底层依赖库
+import smtplib
+from email.mime.text import MIMEText
+from email.header import Header
+
 # =====================================================================
 # 🔒 1. 全局配置与环境初始化
 # =====================================================================
@@ -46,50 +51,46 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ✨【配置对齐】：优先从 Streamlit Secrets 读取纯净 Token，若无则降级读取环境配置
-WECHAT_TOKEN = st.secrets.get("PUSH_TOKEN", os.getenv("PUSH_TOKEN", "")).strip()
+# 📧 【安全通道平替】：放弃老旧钉钉、微信，全量读取云端网页 Secrets 里的 QQ 邮件通道配置
+SMTP_SERVER = st.secrets.get("SMTP_SERVER", "smtp.qq.com")
+SMTP_PORT = int(st.secrets.get("SMTP_PORT", 465))
+EMAIL_SENDER = st.secrets.get("EMAIL_SENDER", "962285016@qq.com").strip()
+EMAIL_PASSWORD = st.secrets.get("EMAIL_PASSWORD", "rurgtzqvhadhbahh").strip() # 你的16位专属代码
+EMAIL_RECEIVER = st.secrets.get("EMAIL_RECEIVER", "962285016@qq.com").strip()
 
-# 兼容老版 DING_WEBHOOK 拼接和新版纯净 DING_TOKEN
-RAW_DING = st.secrets.get("DING_TOKEN", st.secrets.get("DING_WEBHOOK", os.getenv("DING_WEBHOOK", "")))
-if "access_token=" in RAW_DING:
-    DINGTALK_TOKEN = RAW_DING.split("access_token=")[1].split("&")[0].strip()
-else:
-    DINGTALK_TOKEN = RAW_DING.strip()
+def send_email_worker(subject, content):
+    """真正执行邮件发送的后台工人线程"""
+    if not EMAIL_SENDER or not EMAIL_PASSWORD:
+        print("⚠️ 邮件发送失败：云端控制台没有配置 EMAIL_SENDER 或 EMAIL_PASSWORD。")
+        return
 
-# ✨【多线程钢铁防线】：自带前置触发词 + 异常透传打印日志
+    # 创建符合标准的 MIME 邮件结构
+    message = MIMEText(content, 'plain', 'utf-8')
+    message['From'] = Header(f"Jerry风控中心 <{EMAIL_SENDER}>", 'utf-8')
+    message['To'] = Header(EMAIL_RECEIVER, 'utf-8')
+    message['Subject'] = Header(subject, 'utf-8')
+
+    try:
+        # 使用工业级 SSL 465 安全加密连接腾讯服务器，海外服务器秒通不丢包
+        server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, timeout=15)
+        server.login(EMAIL_SENDER, EMAIL_PASSWORD)
+        server.sendmail(EMAIL_SENDER, [EMAIL_RECEIVER], message.as_string())
+        server.quit()
+        print(f"💥【邮件发送成功】通知已成功投递至收件箱({EMAIL_RECEIVER})！")
+    except Exception as e:
+        print(f"⚠️ 跨境邮件发送异常，报错原因: {e}")
+
+# ✨【保持原有关联】：不改动后面任何逻辑，保留原函数签名，内部重构为多线程安全发信
 def global_pure_async_notify(ding_token, wx_token, content):
     """
-    完全切断 Streamlit 脐带的后台纯净线程，带前置安全词，确保消息必达
+    完全切断 Streamlit 脐带的后台纯净线程，用邮件通道对齐原发送总线
     """
-    # 强制加上前置安全词，保证触发钉钉后台的“自定义关键词”过滤
-    safe_content = f"【Jerry风控中心账户变动通知】\n{content}"
-    print(f"📡 [后台推送激活] 准备发送内容:\n{safe_content}")
+    subject = "【Jerry风控中心】资产变动与全网审计回执"
+    print(f"📡 [安全邮件通道激活] 正在启动后台异步线程...")
     
-    if ding_token:
-        url = f"https://oapi.dingtalk.com/robot/send?access_token={ding_token}"
-        try:
-            res = requests.post(url, json={"msgtype": "text", "text": {"content": safe_content}}, timeout=8)
-            print(f"【💥 钉钉云端接口回执】: 状态码 {res.status_code}, 内容: {res.text}")
-        except Exception as e:
-            print(f"⚠️ 后台钉钉异步发送网络连接失败: {e}")
-            
-    if wx_token:
-        # Pushed.io 标准自建/云端标准 API 接口对齐
-        url = "https://api.pushed.io/v1/push"
-        try:
-            # 标准的 Pushed 传参：app_key 和 app_secret 在简易流中通常一致，或者直接用请求体传入 token 字段
-            payload = {
-                "app_key": wx_token,
-                "app_secret": wx_token,
-                "target_type": "app",
-                "content": safe_content
-            }
-            res = requests.post(url, data=payload, timeout=8)
-            # 如果是国内特殊自建通道，可用下方这行替换（按需切换）：
-            # res = requests.post(f"https://api.pushed.io/send?token={wx_token}", data={"content": safe_content}, timeout=8)
-            print(f"【💥 微信云端接口回执】: 状态码 {res.status_code}, 内容: {res.text}")
-        except Exception as e:
-            print(f"⚠️ 后台微信异步发送网络连接失败: {e}")
+    # 依然拉起后台多线程，防止阻塞你的网页刷新
+    thr = threading.Thread(target=send_email_worker, args=(subject, content))
+    thr.start()
 
 FILE_LOCK = threading.Lock()
 PROFILE_FILE = "jerry_profile.json"
@@ -161,7 +162,7 @@ class JerryAgentHarness:
             "你是 Jerry-Insight 系统【首席风控审计官】，代号“铁算盘”。\n"
             "我们要审计的商品是：【" + str(item_name) + "】。\n\n"
             "【❗⚠️ 核心死命令 ⚠️❗】\n"
-            "你必须且只能输出标准的 JSON 块，禁止包含 any JSON 之外的问候性、引言或多余寒暄。你的输出格式必须是以下两种之一：\n\n"
+            "你必须且只能输出标准的 JSON 块，禁止包含 any JSON 之外的问候性、引言或多余寒暄。你的输出格式必须 be 以下两种之一：\n\n"
             "1. 如果需要继续追查搜索：\n"
             "{\"action\": \"Call_Web_Search\", \"action_input\": \"关键词\"}\n\n"
             "2. 如果情报足够，给出最终审计报告（核心内容）：\n"
@@ -407,12 +408,14 @@ if st.session_state['LAST_AUDIT']:
             except: 
                 pass
             
-            # 发送核心通知
-            msg_content = f"已买入 {audit_item}, 成功扣减 {audit_price} 元, 当前卡内剩余流动资金: {profile['current_surplus']} 元。"
+            # 📧 核心资产变动邮件通知内容
+            msg_content = f"【记账回执】\n已买入商品: {audit_item}\n成功扣减流动资金: {audit_price} 元\n卡内当前最新剩余余额: {profile['current_surplus']} 元。"
+            
+            # 使用原有的异步发送框架触发，这里后面两个空参数是为了兼容旧签名，内部不使用
             st.session_state['ASYNC_EXECUTOR'].submit(
                 global_pure_async_notify, 
-                DINGTALK_TOKEN, 
-                WECHAT_TOKEN, 
+                None, 
+                None, 
                 msg_content
             )
             
@@ -431,11 +434,13 @@ if st.session_state['LAST_AUDIT']:
             except: 
                 pass
             
-            msg_content = f"风控拦截：已成功拦截恶意消费商品 {audit_item}，为您安全省下 {audit_price} 元金币！"
+            # 📧 核心风控拦截邮件通知内容
+            msg_content = f"【风控拦截回执】\nJerry-Insight 铁算盘已成功帮您拦截恶意/冲动消费商品: {audit_item}。\n本次已为您安全节省不必要开支共计: {audit_price} 元金币！"
+            
             st.session_state['ASYNC_EXECUTOR'].submit(
                 global_pure_async_notify, 
-                DINGTALK_TOKEN, 
-                WECHAT_TOKEN, 
+                None, 
+                None, 
                 msg_content
             )
             
