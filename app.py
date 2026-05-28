@@ -11,9 +11,9 @@ from openai import OpenAI
 from concurrent.futures import ThreadPoolExecutor
 
 # =====================================================================
-# 🔒 1. 初始化页面配置与面试官资产风控访问锁
+# 🔒 1. 初始化页面配置与面试官资产风控访问锁 (合并唯一配置)
 # =====================================================================
-st.set_page_config(page_title="Jerry-Insight Pro", layout="wide")
+st.set_page_config(page_title="Jerry-Insight Pro v3.5+", layout="wide", page_icon="🛡️")
 
 if 'authenticated' not in st.session_state:
     st.session_state['authenticated'] = False
@@ -55,7 +55,6 @@ except ImportError:
     def push_dingtalk(content, title=None): return "未检测到 notify 钉钉零件"
 
 load_dotenv()
-st.set_page_config(page_title="Jerry-Insight Pro v3.5+", layout="wide", page_icon="🛡️")
 
 FILE_LOCK = threading.Lock()
 PROFILE_FILE = "jerry_profile.json"
@@ -152,7 +151,6 @@ class JerryAgentHarness:
         self.max_steps = max_steps
 
     def run_harness(self, item_name, raw_info_text, profile_data, long_term_context, memory_ctx, status_widget=None):
-        # 🟢 重新精雕细琢的约束 System Prompt：死卡 JSON 框架，但全面放开内部的“文笔和篇幅”！
         system_instruction = (
             "你是 Jerry-Insight 系统【首席风控审计官】，代号“铁算盘”。\n"
             "我们要审计的商品是：【" + item_name + "】。\n\n"
@@ -175,19 +173,19 @@ class JerryAgentHarness:
             step += 1
             try:
                 if status_widget: status_widget.write(f"🧠 [Harness 状态机] 推理寻优中 ({step}/{self.max_steps})...")
-                # 🟢 将温度微调到 0.3：既保证 JSON 不走样，又彻底激活大模型的文学修辞和细腻深度
                 response = self.client.chat.completions.create(model=self.model, messages=conversation_history, temperature=0.3)
                 raw_output = response.choices[0].message.content.strip()
                 
-                # 🟢 【超强强力防御】：提取文本中任何包含 { ... } 的段落，无视大模型可能吐出的任何 markdown 代码块标识
                 json_match = re.search(r'\{.*\}', raw_output, re.DOTALL)
                 if json_match:
                     clean_json_str = json_match.group(0)
                 else:
                     if "```json" in raw_output:
-                        clean_json_str = raw_output.split("```json")[1].split("```")[0].strip()
+                        clean_json_str = raw_output.split("
+```json")[1].split("```")[0].strip()
                     elif "```" in raw_output:
-                        clean_json_str = raw_output.split("```")[1].split("```")[0].strip()
+                        clean_json_str = raw_output.split("
+```")[1].split("```")[0].strip()
                     else:
                         clean_json_str = raw_output
                     
@@ -205,7 +203,6 @@ class JerryAgentHarness:
                 if step >= self.max_steps - 1:
                     break
         
-        # 🟢 【柔性收敛兜底层】：若发生了极端抖动导致不合规，依然帮它把长文提取出来并擦好屁股，永不弹窗中断
         if raw_output:
             if "PRICE_DATA" not in raw_output:
                 clean_text = raw_output.replace("`", "").replace("{", "").replace("}", "")
@@ -222,6 +219,7 @@ def async_push_notification(content, title=None):
     except Exception as e:
         print(f"后台静默发送失败: {e}")
 
+# 检查是否有挂起的通知事件，有则直接线程池异步发送
 if st.session_state['PENDING_NOTIFY']:
     task = st.session_state['PENDING_NOTIFY']
     st.session_state['ASYNC_EXECUTOR'].submit(async_push_notification, task["content"], task["title"])
@@ -318,14 +316,25 @@ st.title("🛡️ Jerry-Insight Pro v3.5+")
 dynamic_profile = get_dynamic_profile()
 st.markdown(f"""> 💳 **Jerry 的当前实时资产面板** ｜ 本月卡里剩余流动资金: :orange[{dynamic_profile['current_surplus']} 元]""")
 
-query = st.chat_input("输入商品名称...")
+# 💡 【核心重构】：引入“启动演示实体兜底”机制，确保页面加载时就有任务驱动核心全套引擎
+if "active_query" not in st.session_state:
+    st.session_state["active_query"] = "某二手平台高风险二手大疆无人机大额转账审计"
 
-if query and query.strip():
-    with st.chat_message("user"): st.write(query)
+# 渲染输入框并捕获新的输入
+chat_query = st.chat_input("输入商品名称...")
+if chat_query and chat_query.strip():
+    st.session_state["active_query"] = chat_query
+
+# 提取当前激活的查询任务进行渲染
+current_task = st.session_state["active_query"]
+
+if current_task:
+    with st.chat_message("user"): 
+        st.write(current_task)
 
     with st.chat_message("assistant"):
-        with st.status("🛸 Jerry-Scout 正在通过 FSM 状态机进行多维调度...", expanded=True) as status:
-            raw_answer, clean_keyword, info_blocks, price_table_data, crawler_results = run_fsm_scout_pipeline(query, status)
+        with st.status(" UFO Jerry-Scout 正在通过 FSM 状态机进行多维调度...", expanded=True) as status:
+            raw_answer, clean_keyword, info_blocks, price_table_data, crawler_results = run_fsm_scout_pipeline(current_task, status)
             
         if raw_answer == "INVALID_INTENT":
             st.error("🚨 监测到非业务输入/无效安全隐患。")
@@ -365,7 +374,6 @@ if query and query.strip():
                     except: 
                         pass
 
-                # 把精确网页 DOM 爆料插入表格首行进行高亮展示
                 if crawler_results and isinstance(parsed_data, list):
                     for spider_item in crawler_results:
                         parsed_data.insert(0, {
@@ -407,7 +415,7 @@ if query and query.strip():
 
             try:
                 memory_collection.add(documents=[f"Jerry曾咨询过关于'{clean_keyword}'的购买决策。结论是：[{short_conclusion}]"], metadatas=[{"source": "chat_log"}], ids=[f"mem_{os.urandom(4).hex()}"])
-                save_audit_log(query, display_answer[:50])
+                save_audit_log(current_task, display_answer[:50])
             except: 
                 pass
 
@@ -429,7 +437,8 @@ if st.session_state['LAST_AUDIT']:
         
         current_profile = get_dynamic_profile()
         
-        st.session_state['PENDING_NOTIFY'] = {
+        # 💡 先准备并直接同步提交异步发送任务，保证数据能安全发出，再执行界面重刷
+        notify_payload = {
             "title": "⚠️ 资产账户变动联合报告",
             "content": (
                 f"### 🛡️ 铁算盘·消费审计报告 (资产扣减)\n"
@@ -441,6 +450,7 @@ if st.session_state['LAST_AUDIT']:
                 f"- **风控提示**：系统已强制对齐月度资产预算规划！"
             )
         }
+        st.session_state['ASYNC_EXECUTOR'].submit(async_push_notification, notify_payload["content"], notify_payload["title"])
         
         try:
             memory_collection.add(documents=[f"Jerry最终确认购买了关于'{audit_item}'的商品。最终状态：[已买入]"], ids=[f"corr_{os.urandom(4).hex()}"])
