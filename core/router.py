@@ -1,4 +1,11 @@
+# Jerry-Insight-Pro/core/router.py
 import re
+import sys
+import os
+
+# ✨ 【彻底根治 KeyError 暗雷】：动态确保项目根目录在 Python 搜索路径第一位
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from core.brain import ask_llm
 
 def classify_intent(query):
@@ -35,12 +42,51 @@ def classify_intent(query):
 
 def clean_query_to_entity(query: str) -> str:
     """
-    新增核心函数：商品关键词清洗。
-    把“我想买可乐”、“有没有人评测一下润百颜”自动清洗成“可乐”、“润百颜”。
+    ✨【核心升级重构】：商品关键词智能清洗。
+    通过调用 DeepSeek 大模型配合工业级规则，彻底斩断长句子污染和非商品输入。
     """
-    stop_phrases = ["我想买", "有人买过", "怎么样", "好不好", "求推荐", "评测一下", "有没有人", "想入一个", "测评", "入手"]
-    clean_keyword = query
-    for phrase in stop_phrases:
-        clean_keyword = clean_keyword.replace(phrase, "")
-    clean_keyword = re.sub(r'[^\w\s\u4e00-\u9fa5]', '', clean_keyword).strip()
-    return clean_keyword if clean_keyword else query
+    if not query or len(query.strip()) < 2:
+        return "NONE"
+
+    # 1. 强力提示词：逼迫 AI 只返回最纯粹的商品名称
+    prompt = f"""
+    你是一个极其精准的【商品名称/实体提取器】。
+    请分析用户的输入，从中仅提取出最核心的、可以去电商平台搜索的【商品型号或名称】，去除所有无意义的修饰词、动作、语气词或场景。
+    
+    ⚠️【核心死命令】：
+    1. 只能返回清洗后的商品名称本身，绝对不能包含任何标点符号、连字符或多余解释。
+    2. 如果用户的输入不是一件商品（例如是某种行为分析、日常聊天、漏洞审计、大额转账风控），请直接返回大写单词："NONE"。
+
+    【示例】
+    输入：我想买个苹果15手机，帮我看看便宜不
+    输出：iPhone 15
+
+    输入：某二手平台高风险二手大疆无人机大额转账审计
+    输出：NONE
+
+    输入：帮我看看雪碧
+    输出：雪碧
+
+    现在请处理以下用户输入：
+    {query}
+    """
+    
+    try:
+        res = ask_llm([{"role": "user", "content": prompt}])
+        entity = res.strip().replace('"', '').replace("'", "")
+        
+        # 2. 拦截安全阀：如果大模型判定非商品，或网络失败，或返回的词长得离谱，直接硬熔断
+        if "NONE" in entity.upper() or "失败" in entity or len(entity) > 12:
+            # 针对“大额转账审计”这类输入，直接返回 NONE，让爬虫知道闭嘴
+            return "NONE"
+            
+        return entity
+    except Exception as e:
+        print(f"⚠️ [提取商品实体异常] 降级处理: {e}")
+        # 如果大模型崩了，用基础正则兜底
+        stop_phrases = ["我想买", "有人买过", "怎么样", "好不好", "求推荐", "评测一下", "有没有人", "想入一个", "测评", "入手"]
+        clean_keyword = query
+        for phrase in stop_phrases:
+            clean_keyword = clean_keyword.replace(phrase, "")
+        clean_keyword = re.sub(r'[^\w\s\u4e00-\u9fa5]', '', clean_keyword).strip()
+        return clean_keyword if len(clean_keyword) <= 12 else "NONE"
