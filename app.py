@@ -25,7 +25,7 @@ if 'LAST_AUDIT' not in st.session_state:
     st.session_state['LAST_AUDIT'] = None
 
 # =====================================================================
-# 🛠️ 2. 核心底层组件引入
+# 🛠️ 2. 核心底层组件引入与环境配置对齐
 # =====================================================================
 from bs4 import BeautifulSoup  
 from core.router import classify_intent, clean_query_to_entity
@@ -35,18 +35,21 @@ from tools.mcp_server import JerryMcpServer
 
 from core.brain import ask_llm
 from tools.search import web_search_pro
-from tools.price_crawler import crawl_smzdm_price  
+from tools.price_crawler import crawl_smzdm_price      
 from core.jerry_fsm_agent import JerryFSMAgent      
 from data.sql_db import save_audit_log
 from dotenv import load_dotenv
 
 load_dotenv()
 
+# 🤖 【钉钉通道安全注入】
 DINGTALK_WEBHOOK = "https://oapi.dingtalk.com/robot/send?access_token=2f4f18adb7a69d71e3faa1e90879d6987c75cbb16b6a7c10fe870b4e9a051c0c"
 
 def send_dingtalk_worker_sync(title, markdown_content):
     if not DINGTALK_WEBHOOK:
+        st.toast("⚠️ 未检测到 DINGTALK_WEBHOOK 凭证", icon="❌")
         return {"errcode": -1, "errmsg": "No webhook url"}
+
     headers = {"Content-Type": "application/json;charset=utf-8"}
     full_title = f"Jerry风控中心 - {title}"
     data = {
@@ -58,14 +61,19 @@ def send_dingtalk_worker_sync(title, markdown_content):
     }
     try:
         response = requests.post(DINGTALK_WEBHOOK, data=json.dumps(data), headers=headers, timeout=10)
-        st.toast("💥【钉钉推送成功】已顺利送达群聊！", icon="✅")
-        return response.json()
+        res_json = response.json()
+        if res_json.get("errcode") == 0:
+            st.toast("💥【钉钉推送成功】已顺利送达群聊！", icon="✅")
+        else:
+            st.toast(f"❌【钉钉内部错误】: {res_json.get('errmsg')}", icon="🚨")
+        return res_json
     except Exception as e:
         st.toast(f"⚠️ 钉钉大厂网关网络异常: {e}", icon="📡")
         return {"errcode": -2, "errmsg": str(e)}
 
 def global_pure_async_notify(ding_token, wx_token, content):
-    return send_dingtalk_worker_sync("资产动态调整", content)
+    title = "资产动态调整"
+    return send_dingtalk_worker_sync(title, content)
 
 FILE_LOCK = threading.Lock()
 PROFILE_FILE = "jerry_profile.json"
@@ -220,30 +228,65 @@ with st.sidebar:
     st.button("🧼 一键重置指纹数据库", type="secondary", width=250, on_click=super_clear_all_states)
     st.write("---")
 
+    st.subheader("📊 铁算盘·资产风控看板")
+    try:
+        all_mems = memory_collection.get()
+        item_status_map = {}
+        if all_mems and all_mems['documents']:
+            for doc in all_mems['documents']:
+                part, status_type = None, None
+                if "强行确认购买了关于'" in doc or "[已买入]" in doc:
+                    part = doc.split("关于'")[1].split("'")[0] if "关于'" in doc else doc
+                    status_type = "WHITELIST"
+                elif "关于'" in doc or "[已拦截]" in doc:
+                    part = doc.split("关于'")[1].split("'")[0] if "关于'" in doc else doc
+                    status_type = "BLACKLIST"
+                if part:
+                    item_status_map[part.strip().replace("'", "").replace('"', "")] = status_type
+        blacklist = [k for k, v in item_status_map.items() if v == "BLACKLIST"]
+        whitelist = [k for k, v in item_status_map.items() if v == "WHITELIST"]
+        
+        with st.expander("🔴 被强制拦截的坑位", expanded=True):
+            if blacklist:
+                for item in blacklist[-5:]: st.markdown(f"❌ `{item}`")
+            else: st.caption("暂无历史拦截记录")
+        with st.expander("🟢 已安全放行的好物", expanded=True):
+            if whitelist:
+                for item in whitelist[-5:]: st.markdown(f"✅ `{item}`")
+            else: st.caption("暂无历史放行记录")
+    except: 
+        st.caption("看板数据同步中...")
+
 st.title("🛡️ Jerry-Insight Pro v3.5+")
 dynamic_profile = get_dynamic_profile()
 st.markdown(f"""> 💳 **Jerry 的当前实时资产面板** ｜ 本月卡里剩余流动资金: :orange[{dynamic_profile['current_surplus']} 元]""")
 
-# 🗂️ 核心回执状态清除器
-if st.session_state["just_recorded"]:
+# 状态核销提示（若刚发生落盘）
+if st.session_state.get("just_recorded", False):
     st.success("💰 资产变更指令强制落地！数字已完全对齐更新！")
     st.session_state["just_recorded"] = False
 
-# 输入框拦截
+# 使用显式全局 Key 控制输入框缓存
 chat_query = st.chat_input("输入商品名称，开始资产风控审计...", key="user_chat_input_core_key")
 
 if chat_query and chat_query.strip():
     st.session_state["active_query"] = chat_query.strip()
-    st.session_state['LAST_AUDIT'] = None  # 强清旧缓存
+    st.session_state['LAST_AUDIT'] = None  # 强清旧账单缓存
     
-    # 🎯【性能起飞优化点一】：在用户回车的这一刻瞬间完成所有爬虫、大模型计算
+    # 🎯【核心优化一】：把大模型调度和爬虫管道移入输入框触发的“即时执行区”
     with st.chat_message("assistant"):
         status = st.status("🛸 Jerry-Scout 正在通过 FSM 状态机进行多维调度...", expanded=True)
         try:
             raw_answer, clean_keyword, info_blocks, price_table_data, crawler_results, long_term_context = run_fsm_scout_pipeline(chat_query.strip(), status)
-            status.update(label="🚀 FSM 流程闭合！核心数据同步完毕！", state="complete", expanded=False)
             
-            # 💡 高效正则价格抽取器
+            if raw_answer == "INVALID_INTENT":
+                status.update(label="🚨 监测到非业务输入。", state="error", expanded=False)
+                st.error("请输入有效的业务商品进行审计。")
+                st.stop()
+                
+            status.update(label="🚀 FSM 流程闭合！情报与定向爬虫数据同步完毕！", state="complete", expanded=False)
+            
+            # 从输出中精准解算价格
             detected_price = 3.5
             if "PRICE_DATA:" in raw_answer:
                 try: 
@@ -255,10 +298,10 @@ if chat_query and chat_query.strip():
                         clean_json_match = re.search(r'\{.*\}', price_part, re.DOTALL)
                         json_str = clean_json_match.group(0) if clean_json_match else price_part
                         detected_price = float(json.loads(json_str)["estimated_price"])
-                except: 
-                    pass
+                except Exception as p_err: 
+                    print(f"⚠️ 价格精细化抽取未命中: {p_err}")
 
-            # 🎯 算完立刻死死存入会话状态，此后刷新绝不再重跑后台
+            # 🎯 算完的宝贵数据全部锁死进入 Session State 缓存结构，绝不丢失
             st.session_state['LAST_AUDIT'] = {
                 "price": detected_price, 
                 "item": clean_keyword, 
@@ -268,14 +311,17 @@ if chat_query and chat_query.strip():
                 "crawler_results": crawler_results,
                 "long_term_context": long_term_context
             }
-        except Exception as global_err:
-            st.error(f"引擎发生不可逆溃散: {global_err}")
+        except Exception as e:
+            status.update(label=f"❌ 流程运行异常: {str(e)}", state="error", expanded=False)
+            st.error(f"引擎报错: {e}")
+            st.stop()
+            
     st.rerun()
 
-# --------------------------------======================
-# 🎨 6. 纯粹的前端静态渲染区（不含任何爬虫计算，性能极高）
-# --------------------------------======================
-if st.session_state['LAST_AUDIT'] and not st.session_state["just_recorded"]:
+# ==========================================================
+# 🎨 6. 纯静态前端渲染区（不含有任何计算开销，速度极快）
+# ==========================================================
+if st.session_state['LAST_AUDIT']:
     audit_data = st.session_state['LAST_AUDIT']
     
     with st.chat_message("user"):
@@ -288,37 +334,44 @@ if st.session_state['LAST_AUDIT'] and not st.session_state["just_recorded"]:
             if blocks and idx < len(blocks):
                 text_snippet, source_url, rerank_score = blocks[idx]
             else:
-                text_snippet = f"对齐商品 【{audit_data['item']}】 的多渠道行情分布线索。"
+                text_snippet = f"对齐商品 【{audit_data['item']}】 的多渠道行情分布与全网存证基准线线索。"
                 source_url = f"https://search.smzdm.com/?s={audit_data['item']}"
                 rerank_score = 0.88 - (idx * 0.04)
+                
             st.markdown(f"**情报源 [{idx+1}]** ｜ 匹配度分值: `{round(float(rerank_score), 4)}`")
             st.caption(f"内容摘要: {text_snippet[:150]}...")
             if source_url: st.markdown(f"🔗 [点击查看原始存证网页]({source_url})")
             st.write("---")
 
+        st.markdown("### 📌 Jerry-Scout 关联历史输入知识库线索")
+        lt_ctx = audit_data["long_term_context"]
+        if lt_ctx and len(lt_ctx.strip()) > 10:
+            st.info(f"🔍 铁算盘为你捞出了关于【{audit_data['item']}】的历史输入关联记录快照：\n\n{lt_ctx}")
+        else:
+            st.caption(f"💡 历史拦截库中暂未匹配到针对“{audit_data['item']}”的历史指纹。已自动保存。")
+
         st.markdown("### 📊 Jerry-Scout 监测到全网全渠道实时比价盘口")
         parsed_data = []
-        if audit_data["price_table_data"]:
-            try:
-                if isinstance(audit_data["price_table_data"], list): parsed_data.extend(audit_data["price_table_data"])
-            except: pass
+        if audit_data["price_table_data"] and isinstance(audit_data["price_table_data"], list):
+            parsed_data.extend(audit_data["price_table_data"])
         if audit_data["crawler_results"]:
             for spider_item in audit_data["crawler_results"]:
                 parsed_data.append({"🛒 渠道平台": f"🔥 {spider_item['platform']}", "💰 实时报价与情报": spider_item['price_info'], "🔗 原始链接": spider_item['source']})
         if not parsed_data:
-            parsed_data = [{"🛒 渠道平台": "官方电商渠道", "💰 实时报价与情报": f"全网均价约大盘浮动", "🔗 原始链接": "本地商超端"}]
+            parsed_data = [{"🛒 渠道平台": "官方电商渠道", "💰 实时报价与情报": "全网均价约大盘浮动", "🔗 原始链接": "本地商超端"}]
+            
         st.dataframe(pd.DataFrame(parsed_data), hide_index=True)
 
         st.markdown("### 🛡️ Jerry-Insight 深度审计报告")
         st.markdown(audit_data["display_answer"])
 
-    # 🪙 底部记账核销决策面板
+    # 🪙 底部资产核销与决策面板
     st.write("---")
     col1, col2 = st.columns(2)
     
     with col1:
-        # 🎯【核心修复点】：直接去缓存变量拿绝对正确的价格（如 23元），绝不触发降级兜底
-        if st.button(f"🪙 确认记入账本 (扣减 {audit_data['price']} 元)", type="primary", use_container_width=True):
+        # 🎯【核心修复二】：按钮及事件内，全部从锁死状态 audit_data 变量中直接取值
+        if st.button(f"🪙 确认记入账本 (扣减 {audit_data['price']}元)", type="primary", key="btn_confirm_deduct", use_container_width=True):
             try:
                 profile = get_dynamic_profile()
                 profile["current_surplus"] = round(profile["current_surplus"] - audit_data['price'], 2)
@@ -328,25 +381,45 @@ if st.session_state['LAST_AUDIT'] and not st.session_state["just_recorded"]:
                     json.dump(profile, f, ensure_ascii=False, indent=4)
                 
                 memory_collection.add(documents=[f"强行确认购买了关于'{audit_data['item']}'的商品。[已买入]"], ids=[f"pass_{int(time.time())}"])
-            except Exception as e:
-                print(f"数据落盘异常: {e}")
-
-            msg_content = f"### 🪙 账单自动核销支出回执\n\n---\n👉 **已购入好物**：`{audit_data['item']}`\n\n👉 **本次扣减金额**：`{audit_data['price']} 元`\n\n💰 **本月卡内当前剩余流动资金**：**{profile['current_surplus']} 元**\n\n---\n» *Jerry风控中心 铁算盘自动审计点出证完毕*"
+                save_audit_log(st.session_state["active_query"], audit_data["display_answer"][:50])
+            except Exception as file_err:
+                print(f"本地落盘异常: {file_err}")
+            
+            # 发送消息给钉钉
+            msg_content = (
+                f"### 🪙 账单自动核销支出回执\n\n"
+                f"--- \n\n"
+                f"👉 **已购入好物**：`{audit_data['item']}`\n\n"
+                f"👉 **本次扣减金额**：`{audit_data['price']} 元`\n\n"
+                f"💰 **本月卡内当前剩余流动资金**：**{profile['current_surplus']} 元**\n\n"
+                f"--- \n"
+                f"» *Jerry风控中心 铁算盘自动审计点出证完毕*"
+            )
             global_pure_async_notify(None, None, msg_content)
             
-            # 🎯【性能起飞优化点二】：强制清空变量，直接 rerun。由于上面套了 if 隔离层，画面会瞬间彻底蒸发！不需要等任何加载！
+            # 瞬间重置状态，页面立刻变干净
             st.session_state["active_query"] = None
             st.session_state['LAST_AUDIT'] = None
             st.session_state["just_recorded"] = True
             st.rerun()
 
     with col2:
-        if st.button(f"🙅‍♂️ 听从劝阻 (放弃购买)", type="secondary", use_container_width=True):
+        if st.button(f"🙅‍♂️ 听从劝阻 (放弃购买)", type="secondary", key="btn_cancel_deduct", use_container_width=True):
             try:
                 memory_collection.add(documents=[f"关于'{audit_data['item']}'的购买决策。建议避坑，[开拦截]"], ids=[f"block_{int(time.time())}"])
-            except: pass
+                save_audit_log(st.session_state["active_query"], "用户选择听从风控劝阻")
+            except: 
+                pass
             
-            msg_content = f"### 🚨 铁算盘守门员：成功风控拦截\n\n---\n🙅‍♂️ **已成功帮您掐断冲动消费**：`{audit_data['item']}`\n\n✨ **本次理智帮您守住资金**：`{audit_data['price']} 元`\n\n🔒 **资产安全等级已自动上调！继续保持！**\n\n---\n» *Jerry风控中心 铁算盘自动审计点出证完毕*"
+            msg_content = (
+                f"### 🚨 铁算盘守门员：成功风控拦截\n\n"
+                f"--- \n\n"
+                f"🙅‍♂️ **已成功帮您掐断冲动消费**：`{audit_data['item']}`\n\n"
+                f"✨ **本次理智帮您守住资金**：`{audit_data['price']} 元`\n\n"
+                f"🔒 **资产安全等级已自动上调！继续保持！**\n\n"
+                f"--- \n"
+                f"» *Jerry风控中心 铁算盘自动审计点出证完毕*"
+            )
             global_pure_async_notify(None, None, msg_content)
             
             st.session_state["active_query"] = None
@@ -354,5 +427,14 @@ if st.session_state['LAST_AUDIT'] and not st.session_state["just_recorded"]:
             st.session_state["just_recorded"] = True
             st.rerun()
 
-elif not st.session_state["active_query"]:
-    st.info("💡 欢迎来到 Jerry-Insight 工业级消费风控中心！请在下方输入框中键入你想审计的设备名称并敲击回车。")
+# ---------------------------------------------------------
+st.write("---")
+st.subheader("🧪 钉钉机器人通道联调测试")
+if st.button("🚀 强制发送一封测试消息到我的钉钉", use_container_width=True):
+    with st.spinner("正在向钉钉官方网关全速投递中..."):
+        res = send_dingtalk_worker_sync(
+            "通道联调测试", 
+            "### 🎉 恭喜！通道联调成功\n\n当你看到这条消息时，说明你的钉钉机器人 Webhook 通道已经稳如磐石地被打通了！\n\n*安全设置校验关键词已通过：Jerry风控中心*"
+        )
+        if res and res.get("errcode") == 0:
+            st.success("💥 钉钉网关已返回成功的回执 (errcode: 0)！")
