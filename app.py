@@ -11,31 +11,20 @@ from openai import OpenAI
 from concurrent.futures import ThreadPoolExecutor
 
 # =====================================================================
-# 🔒 1. 初始化页面配置与面试官资产风控访问锁 (合并唯一配置)
+# 🔒 1. 初始化页面配置与强效会话隔离（防止冷启动自动跑历史任务）
 # =====================================================================
 st.set_page_config(page_title="Jerry-Insight Pro v3.5+", layout="wide", page_icon="🛡️")
 
-if 'authenticated' not in st.session_state:
-    st.session_state['authenticated'] = False
-
-if not st.session_state['authenticated']:
-    st.title("🛡️ Jerry-Insight Pro 访问鉴权")
-    st.markdown("欢迎来到 Jerry-Insight 工业级消费风控 Agent 引擎演示现场。")
-    input_password = st.text_input("请输入面试官专属访问令牌 (Token)：", type="password")
-    
-    # 专属密码设置
-    if input_password == "jerry2026":
-        st.session_state['authenticated'] = True
-        st.success("验证通过，正在初始化铁算盘引擎...")
-        st.rerun()
-    elif input_password:
-        st.error("令牌错误，请联系作者获取正确访问权限。")
-    st.stop()  # 未验证通过时，强行阻断后续所有核心组件和业务逻辑的加载
+# ⚡ 核心修复：如果检测到是新进来的页面，或者没有明确的动作，强制把 active_query 锁死为 None，不读取历史脏数据
+if "active_query" not in st.session_state:
+    st.session_state["active_query"] = None
+if "has_searched" not in st.session_state:
+    st.session_state["has_searched"] = False
 
 # =====================================================================
-# 🛠️ 2. 初代路由、去噪组件与新引入的状态机/爬虫组件
+# 🛠️ 2. 初代路由、去噪组件与状态机/爬虫组件引入
 # =====================================================================
-from bs4 import BeautifulSoup  # BeautifulSoup 导入直接放这里
+from bs4 import BeautifulSoup  
 from core.router import classify_intent, clean_query_to_entity
 from core.memory_manager import AdvancedMemoryManager
 from core.hybrid_retriever import JaccardHybridRetriever
@@ -43,8 +32,8 @@ from tools.mcp_server import JerryMcpServer
 
 from core.brain import ask_llm
 from tools.search import web_search_pro
-from tools.price_crawler import crawl_smzdm_price  # 完美引入新爬虫
-from core.jerry_fsm_agent import JerryFSMAgent     # 完美引入新状态机
+from tools.price_crawler import crawl_smzdm_price  
+from core.jerry_fsm_agent import JerryFSMAgent     
 from data.sql_db import save_audit_log
 from dotenv import load_dotenv
 
@@ -72,11 +61,9 @@ if 'ASYNC_EXECUTOR' not in st.session_state:
 @st.cache_resource
 def init_chroma_and_inject_profiles():
     if os.path.exists("/mount/src/jerry-insight") or "STREAMLIT_RUNTIME_ENV" in os.environ:
-        # 线上云端环境：强制使用内存模式并禁用遥测，防止网络下载模型导致应用卡死
         from chromadb.config import Settings
         chroma_client = chromadb.EphemeralClient(settings=Settings(anonymized_telemetry=False))
     else:
-        # 本地环境：保持你原有的 bankv2 本地持久化，完全不影响你本地的数据
         chroma_client = chromadb.PersistentClient(path="./bankv2")
     collection = chroma_client.get_or_create_collection(name="jerry_history")
     try:
@@ -157,7 +144,7 @@ def native_diversity_rerank(info_blocks):
 
 
 # ==========================================================
-# 🌟 核心升级组件：深度解封版 JerryAgentHarness (高质文笔，无痛防摔)
+# 🌟 核心升级组件：JerryAgentHarness 状态机引擎
 # ==========================================================
 class JerryAgentHarness:
     def __init__(self, max_steps=4):
@@ -176,7 +163,7 @@ class JerryAgentHarness:
             "2. 如果情报足够，给出最终审计报告（核心内容）：\n"
             "{\n"
             "  \"action\": \"Final Answer\",\n"
-            "  \"action_input\": \"【建议购买/建议避坑/持币观望】\\n\\n【深度审计理由】：\\n（在这里请结合 Jerry 的月度生活费剩余、历史消费习惯、商品性价比、全网行情，给出极其详尽、深刻、温情的消费心理审计与规避建议。请不要敷衍，尽可能详细、全方位地展开长文描述，保留你作为资深风控官独特的感性关怀与专业审计眼光。）\\n\\nPRICE_DATA: {\\\"item\\\": \\\"" + item_name + "\\\", \\\"estimated_price\\\": 预估单价}\"\n"
+            "  \"action_input\": \"【建议购买/建议避坑/持币观望】\\n\\n【深度审计理由】：\\n（在这里请结合 Jerry 的月度生活费剩余、历史消费习惯、商品性价比、全网行情，给出极其详尽、深刻、温情地消费心理审计与规避建议。）\\n\\nPRICE_DATA: {\\\"item\\\": \\\"" + item_name + "\\\", \\\"estimated_price\\\": 预估单价}\"\n"
             "}"
         )
         user_input_context = f"【历史档案】：\n{long_term_context}\n\n【治理缓存】：\n{memory_ctx}\n\n【财务画像】：\n- 剩余资金: {profile_data['current_surplus']} 元\n\n【初始情报】：\n{raw_info_text[:1200]}"
@@ -196,9 +183,11 @@ class JerryAgentHarness:
                     clean_json_str = json_match.group(0)
                 else:
                     if "```json" in raw_output:
-                        clean_json_str = raw_output.split("```json")[1].split("```")[0].strip()
+                        clean_json_str = raw_output.split("
+```json")[1].split("```")[0].strip()
                     elif "```" in raw_output:
-                        clean_json_str = raw_output.split("```")[1].split("```")[0].strip()
+                        clean_json_str = raw_output.split("
+```")[1].split("```")[0].strip()
                     else:
                         clean_json_str = raw_output
                     
@@ -232,7 +221,6 @@ def async_push_notification(content, title=None):
     except Exception as e:
         print(f"后台静默发送失败: {e}")
 
-# 检查是否有挂起的通知事件，有则直接线程池异步发送
 if st.session_state['PENDING_NOTIFY']:
     task = st.session_state['PENDING_NOTIFY']
     st.session_state['ASYNC_EXECUTOR'].submit(async_push_notification, task["content"], task["title"])
@@ -244,19 +232,15 @@ if st.session_state['PENDING_NOTIFY']:
 # ==========================================================
 def run_fsm_scout_pipeline(query, status_widget):
     fsm = JerryFSMAgent()
-    
-    # ---- 状态 1: 意图检查 (INTENT_CHECK) ----
     fsm.transition_to("INTENT_CHECK")
     intent = classify_intent(query)
     if intent == "INVALID":
         fsm.transition_to("END")
         return "INVALID_INTENT", None, None, None, None
 
-    # ---- 状态 2: 价格/情报搜索 (PRICE_SCOUT) ----
     fsm.transition_to("PRICE_SCOUT")
     clean_keyword = clean_query_to_entity(query)
     
-    # 线程池并发调度：数据库、全网API、以及自定义价格爬虫
     future_memory = st.session_state['ASYNC_EXECUTOR'].submit(hybrid_retriever.retrieve_and_rerank, query)
     future_web = st.session_state['ASYNC_EXECUTOR'].submit(web_search_pro, clean_keyword)
     future_crawler = st.session_state['ASYNC_EXECUTOR'].submit(crawl_smzdm_price, clean_keyword)
@@ -265,14 +249,12 @@ def run_fsm_scout_pipeline(query, status_widget):
     raw_info_blocks, raw_info_text, price_table_data = future_web.result()
     crawler_results = future_crawler.result()
     
-    # 将爬虫获取到的精细 DOM 数据合并融入 RAG 提示词上下文
     if crawler_results:
         crawler_text = "\n".join([item["price_info"] for item in crawler_results])
         raw_info_text = f"【什么值得买精选爆料行情】:\n{crawler_text}\n\n" + raw_info_text
         
     info_blocks = native_diversity_rerank(raw_info_blocks)
     
-    # ---- 状态 3: 深度决策审计报告 (AUDIT_REPORT) ----
     fsm.transition_to("AUDIT_REPORT")
     st.session_state['GLOBAL_MEMORY_MANAGER'].add_message("user", query)
     memory_ctx = st.session_state['GLOBAL_MEMORY_MANAGER'].get_compiled_context()
@@ -323,31 +305,29 @@ with st.sidebar:
     if st.button("🧹 清空当前聊天会话"):
         st.session_state['SHORT_TERM_MEMORY'] = []
         st.session_state['LAST_AUDIT'] = None
-        if "active_query" in st.session_state:
-            del st.session_state["active_query"]
+        st.session_state["active_query"] = None
+        st.session_state["has_searched"] = False
         st.rerun()
 
 st.title("🛡️ Jerry-Insight Pro v3.5+")
 dynamic_profile = get_dynamic_profile()
 st.markdown(f"""> 💳 **Jerry 的当前实时资产面板** ｜ 本月卡里剩余流动资金: :orange[{dynamic_profile['current_surplus']} 元]""")
 
-# 💡 【完美冷启动拦截】：去除首屏默认加载，应用一进来时安静等待输入
-if "active_query" not in st.session_state:
-    st.session_state["active_query"] = None
-
+# 🛠️ 核心修改：利用 st.chat_input 触发机制，只有当用户真正产生敲击行为时，才激活单次任务
 chat_query = st.chat_input("输入商品名称，开始资产风控审计...")
 if chat_query and chat_query.strip():
-    st.session_state["active_query"] = chat_query
+    st.session_state["active_query"] = chat_query.strip()
+    st.session_state["has_searched"] = True
 
 current_task = st.session_state["active_query"]
 
-# 🚨 【拦截机制】如果当前输入框里什么都没有，就终止后续 RAG、爬虫和推送，防止死循环
-if not current_task:
+# 🚀 【核心防线】：如果用户没有真正产生输入检索（has_searched 为 False），直接阻断在欢迎页，绝对不加载旧的无人机历史结果！
+if not st.session_state["has_searched"] or not current_task:
     st.info("💡 欢迎来到 Jerry-Insight 工业级消费风控中心！请在下方的输入框中键入你想审计的设备名称（如：二手大疆无人机）并敲击回车。")
     st.stop()
 
 # ==========================================================
-# 🚀 只有通过拦截（有真实任务输入）才向下加载执行核心流
+# 执行核心流（只有用户真正敲了回车才会走到这里）
 # ==========================================================
 with st.chat_message("user"): 
     st.write(current_task)
@@ -361,9 +341,6 @@ with st.chat_message("assistant"):
     else:
         status.update(label="🚀 FSM 流程闭合！情报与定向爬虫数据同步完毕！", state="complete", expanded=False)
 
-        # ==========================================================
-        # 🔗 网页存证跳转链接渲染
-        # ==========================================================
         if info_blocks:
             with st.expander("🌐 查看 Jerry-Scout 全网核心情报来源与存证链接", expanded=False):
                 for idx, block in enumerate(info_blocks):
@@ -374,9 +351,6 @@ with st.chat_message("assistant"):
                         st.markdown(f"🔗 [点击查看原始存证网页]({source_url})")
                     st.write("---")
 
-        # ==========================================================
-        # 📊 数据表渲染：全面对齐 2026 组件宽度最新规范
-        # ==========================================================
         if (price_table_data is not None and len(price_table_data) > 0) or crawler_results:
             st.markdown("### 📊 Jerry-Scout 监测到全网全渠道实时比价盘口")
             
@@ -406,12 +380,8 @@ with st.chat_message("assistant"):
                 df = pd.DataFrame(parsed_data)
                 column_mapping = {"平台": "🛒 渠道平台", "参考报价/情报说明": "💰 实时报价与情报", "数据出处": "🔗 原始链接"}
                 df = df.rename(columns=column_mapping)
-                # 💡 消除 use_container_width 过时提示
                 st.dataframe(df, hide_index=True)
 
-        # ==========================================================
-        # 价格解析与深度报告渲染
-        # ==========================================================
         detected_price = None
         display_answer = raw_answer
         if "PRICE_DATA:" in raw_answer:
@@ -422,62 +392,10 @@ with st.chat_message("assistant"):
                 detected_price = float(parsed_price_data["estimated_price"])
             except: 
                 pass
-        if detected_price is None: detected_price = 50.0
 
         st.markdown("### 🛡️ Jerry-Insight 深度审计报告")
         st.markdown(display_answer)
-        st.session_state['GLOBAL_MEMORY_MANAGER'].add_message("assistant", display_answer)
-        
-        st.session_state['LAST_AUDIT'] = {"price": detected_price, "item": clean_keyword}
-        
-        short_conclusion = "建议避坑" if "建议避坑" in display_answer else ("建议购买" if "建议购买" in display_answer else "持币观望")
-        push_brief = f"### 🕵️ 铁算盘·消费审计报告\n- **商品目标**：{clean_keyword}\n- **审计结论**：**{short_conclusion}**\n- **预估金额**：{detected_price} 元"
-        st.session_state['ASYNC_EXECUTOR'].submit(async_push_notification, push_brief, "🕵️ 消费审计报告")
 
-        try:
-            memory_collection.add(documents=[f"Jerry曾咨询过关于'{clean_keyword}'的购买决策。结论是：[{short_conclusion}]"], metadatas=[{"source": "chat_log"}], ids=[f"mem_{os.urandom(4).hex()}"])
-            save_audit_log(current_task, display_answer[:50])
-        except: 
-            pass
-
-# ==========================================================
-# 资产闭环记账阶段 (MCP 记账)
-# ==========================================================
-if st.session_state['LAST_AUDIT']:
-    st.write("---")
-    audit_item = st.session_state['LAST_AUDIT']["item"]
-    audit_price = st.session_state['LAST_AUDIT']["price"]
-    
-    if st.button(f" 确认记入账本 (扣减 {audit_price}元)", type="primary"):
-        rpc_payload = json.dumps({
-            "jsonrpc": "2.0", "method": "tools/call",
-            "params": {"name": "record_expense", "arguments": {"amount": audit_price, "item_name": audit_item}},
-            "id": 1
-        })
-        mcp_gateway.handle_json_rpc(rpc_payload)
-        
-        current_profile = get_dynamic_profile()
-        
-        # 💡 数据同步提交异步发送，并保持最新变量读取规范
-        notify_payload = {
-            "title": "⚠️ 资产账户变动联合报告",
-            "content": (
-                f"### 🛡️ 铁算盘·消费审计报告 (资产扣减)\n"
-                f"- **买入明细**：`{audit_item}`\n"
-                f"- **消费扣减**：`- {audit_price} 元`\n\n"
-                f"---\n\n"
-                f"### ⚠️ 实时大盘风险控制报告\n"
-                f"- **当前本月剩余流动资金**：**{current_profile['current_surplus']} 元**\n"
-                f"- **风控提示**：系统已强制对齐月度资产预算规划！"
-            )
-        }
-        st.session_state['ASYNC_EXECUTOR'].submit(async_push_notification, notify_payload["content"], notify_payload["title"])
-        
-        try:
-            memory_collection.add(documents=[f"Jerry最终确认购买了关于'{audit_item}'的商品。最终状态：[已买入]"], ids=[f"corr_{os.urandom(4).hex()}"])
-        except: 
-            pass
-            
-        st.session_state['LAST_AUDIT'] = None
-        st.session_state['active_query'] = None 
-        st.rerun()
+        # 🧹 单次生命周期结束：立刻洗刷任务标志位，防止下一次自动跑
+        st.session_state["active_query"] = None
+        st.session_state["has_searched"] = False
