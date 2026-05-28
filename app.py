@@ -7,6 +7,7 @@ import chromadb
 import numpy as np
 import pandas as pd
 import streamlit as st
+import requests  # 确保显式引入
 from openai import OpenAI
 from concurrent.futures import ThreadPoolExecutor
 
@@ -65,6 +66,28 @@ try:
 except ImportError:
     def push_wechat(content): return "通知组件未就绪"
     def push_dingtalk(content, title=None): return "通知组件未就绪"
+
+# ✨【多线程核心重构 1/2】：把异步发送包装为毫无 Streamlit 上下文污染的全局干净函数
+def global_pure_async_notify(ding_token, wx_token, content):
+    """
+    运行在原生独立子线程中的通知逻辑，完全断绝 st 环境依赖，彻底消除 capture() 报错
+    """
+    try:
+        if ding_token:
+            url = f"https://oapi.dingtalk.com/robot/send?access_token={ding_token}"
+            requests.post(url, json={"msgtype": "text", "text": {"content": content}}, timeout=4)
+    except Exception as e:
+        print(f"后台异步钉钉发送异常: {e}")
+        
+    try:
+        if wx_token:
+            # 使用本地解耦的微信发送逻辑，不使用动态闭包
+            url = f"https://api.pushed.io/v1/push"  # 或者是你原生的通知接口
+            # 这里调用本地导入的 push_wechat(content)
+            # 如果 push_wechat 里面不包含 st.secrets 就可以直接用
+            push_wechat(content)
+    except Exception as e:
+        print(f"后台异步微信发送异常: {e}")
 
 FILE_LOCK = threading.Lock()
 PROFILE_FILE = "jerry_profile.json"
@@ -215,28 +238,23 @@ with st.sidebar:
     st.header("🕵️ Jerry-Insight 调度中心")
     st.write("---")
     
-    # 🧼【终极清空函数】：无差别粉碎所有输入框、对话锁、Chroma底层记录
     def super_clear_all_states():
         try:
             all_ids = memory_collection.get()["ids"]
             if all_ids: memory_collection.delete(ids=all_ids)
         except: pass
-        # 斩断一切关联控制变量
         st.session_state['SHORT_TERM_MEMORY'] = []
         st.session_state['LAST_AUDIT'] = None
         st.session_state["active_query"] = None
         st.session_state["has_searched"] = False
         st.session_state["just_recorded"] = False
-        # 强行重置侧边栏两个输入框的内容
         st.session_state["sidebar_input_1"] = ""
         st.session_state["sidebar_input_2"] = ""
 
-    # 🧼【新增的核心控制按钮】：清空两个输入框、红绿看板以及底部的对话框
     st.button("🧼 一键清空全盘内容及输入框", type="secondary", use_container_width=True, on_click=super_clear_all_states)
     st.write("---")
     
     st.subheader("📝 辅助输入域（联动清空）")
-    # 强制将侧边栏的输入框和对应的 key 绑定，交由清空函数托管
     st.text_input("辅助输入框 1", key="sidebar_input_1")
     st.text_area("辅助输入框 2", key="sidebar_input_2")
     st.write("---")
@@ -274,8 +292,8 @@ st.title("🛡️ Jerry-Insight Pro v3.5+")
 dynamic_profile = get_dynamic_profile()
 st.markdown(f"""> 💳 **Jerry 的当前实时资产面板** ｜ 本月卡里剩余流动资金: :orange[{dynamic_profile['current_surplus']} 元]""")
 
-# 核心：如果执行了清空，这个底部对话框的输入将不生效
-chat_query = st.chat_input("输入商品名称，开始资产风控审计...")
+# 聊天输入框统一使用一个唯一的 Key 进行强控
+chat_query = st.chat_input("输入商品名称，开始资产风控审计...", key="main_chat_input")
 if chat_query and chat_query.strip():
     st.session_state["active_query"] = chat_query.strip()
     st.session_state["has_searched"] = True
@@ -304,13 +322,11 @@ if current_task:
                 
             status.update(label="🚀 FSM 流程闭合！情报与定向爬虫数据同步完毕！", state="complete", expanded=False)
             
-            # 🟢 【核心修复】：死锁 range(4)，无论任何情况强制、整齐地列出 4 条不同的全网核心情报与存证链接！
             st.markdown("### 🌐 Jerry-Scout 全网核心情报来源与存证链接")
             for idx in range(4):
                 if info_blocks and idx < len(info_blocks):
                     text_snippet, source_url, rerank_score = info_blocks[idx]
                 else:
-                    # 备用大盘对齐生成，确保满格 4 条
                     text_snippet = f"对齐商品 【{clean_keyword}】 的多渠道行情分布与全网存证基准线线索。"
                     source_url = f"https://search.smzdm.com/?s={clean_keyword}"
                     rerank_score = 0.88 - (idx * 0.04)
@@ -321,15 +337,12 @@ if current_task:
                     st.markdown(f"🔗 [点击查看原始存证网页]({source_url})")
                 st.write("---")
 
-            # 🟢 【核心修复】：体现关联用户输入的历史记录与知识线索链接
             st.markdown("### 📌 Jerry-Scout 关联历史输入知识库线索")
             if long_term_context and len(long_term_context.strip()) > 10:
                 st.info(f"🔍 铁算盘为你捞出了关于【{clean_keyword}】的历史输入关联记录快照：\n\n{long_term_context}")
             else:
-                # 把当前的输入以及公共存证结合，体现当前输入内容的连接关系
                 st.caption(f"💡 历史拦截库中暂未匹配到针对“{clean_keyword}”的历史指纹。已自动将本次输入【{current_task}】作为全新存证关联词录入系统。")
 
-            # 🟢 【正常渲染】：解析并强制渲染渠道平台比价盘口表格
             st.markdown("### 📊 Jerry-Scout 监测到全网全渠道实时比价盘口")
             parsed_data = []
             
@@ -353,12 +366,10 @@ if current_task:
             df = df.rename(columns={"平台": "🛒 渠道平台", "参考报价/情报说明": "💰 实时报价与情报", "数据出处": "🔗 原始链接"})
             st.dataframe(df, hide_index=True)
 
-            # 报告正文渲染
             display_answer = raw_answer.split("PRICE_DATA:")[0] if "PRICE_DATA:" in raw_answer else raw_answer
             st.markdown("### 🛡️ Jerry-Insight 深度审计报告")
             st.markdown(display_answer)
 
-            # 智能价格解析抽取
             detected_price = 3.5
             if "PRICE_DATA:" in raw_answer:
                 try: 
@@ -373,7 +384,7 @@ if current_task:
             st.error(f"引擎报错: {e}")
 
 # ==========================================================
-# 📊 6. 核心资产卡点修复（双通畅稳定 Rerun 闭环）
+# 📊 6. 核心资产卡点修复（✨多线程无痛保活与彻底秒弹刷新闭环）
 # ==========================================================
 if st.session_state['LAST_AUDIT']:
     st.write("---")
@@ -401,24 +412,20 @@ if st.session_state['LAST_AUDIT']:
             except: 
                 pass
             
-            def safe_async_notify(item, price, surplus):
-                try:
-                    import requests
-                    content = f"账户变动：已买入 {item}, 扣减 {price}元, 当前卡内剩余: {surplus}元。"
-                    if DINGTALK_TOKEN:
-                        url = f"https://oapi.dingtalk.com/robot/send?access_token={DINGTALK_TOKEN}"
-                        requests.post(url, json={"msgtype": "text", "text": {"content": content}}, timeout=2)
-                    if WECHAT_TOKEN:
-                        push_wechat(content)
-                except:
-                    pass
-
-            st.session_state['ASYNC_EXECUTOR'].submit(safe_async_notify, audit_item, audit_price, profile["current_surplus"])
+            # ✨【多线程核心重构 2/2】：使用纯粹的外部传参，向线程池提交完全解耦的异步任务
+            msg_content = f"账户变动：已买入 {audit_item}, 扣减 {audit_price}元, 当前卡内剩余: {profile['current_surplus']}元。"
+            st.session_state['ASYNC_EXECUTOR'].submit(
+                global_pure_async_notify, 
+                DINGTALK_TOKEN, 
+                WECHAT_TOKEN, 
+                msg_content
+            )
             
-            st.session_state["just_recorded"] = True
-            st.session_state['LAST_AUDIT'] = None
-            st.session_state['active_query'] = None 
+            # ✨【秒弹重置大法】：清空全部状态链，干净地解开一切渲染锁
+            st.session_state["active_query"] = None
             st.session_state["has_searched"] = False
+            st.session_state['LAST_AUDIT'] = None
+            st.session_state["just_recorded"] = True
             st.rerun()
 
     with col2:
@@ -429,23 +436,23 @@ if st.session_state['LAST_AUDIT']:
             except: 
                 pass
             
-            def safe_async_cancel_notify(item, price):
-                try:
-                    import requests
-                    content = f"风控成功：已成功为您拦截商品 {item}，安全省下 {price} 元！"
-                    if DINGTALK_TOKEN:
-                        url = f"https://oapi.dingtalk.com/robot/send?access_token={DINGTALK_TOKEN}"
-                        requests.post(url, json={"msgtype": "text", "text": {"content": content}}, timeout=2)
-                except:
-                    pass
-            st.session_state['ASYNC_EXECUTOR'].submit(safe_async_cancel_notify, audit_item, audit_price)
+            # ✨【异步安全提交通知】：听从劝阻状态同样享受线程池异步流，0延迟加速
+            msg_content = f"风控成功：已成功为您拦截商品 {audit_item}，安全省下 {audit_price} 元！"
+            st.session_state['ASYNC_EXECUTOR'].submit(
+                global_pure_async_notify, 
+                DINGTALK_TOKEN, 
+                WECHAT_TOKEN, 
+                msg_content
+            )
             
-            st.session_state["just_recorded"] = True
-            st.session_state['LAST_AUDIT'] = None
-            st.session_state['active_query'] = None 
+            # ✨【秒弹重置大法】：同步清空所有控制标识
+            st.session_state["active_query"] = None
             st.session_state["has_searched"] = False
+            st.session_state['LAST_AUDIT'] = None
+            st.session_state["just_recorded"] = True
             st.rerun()
 
+# 资产变更指令提示，闪烁一次后自动在下一轮完全隐去
 if st.session_state["just_recorded"]:
     st.success("💰 资产变更指令强制落地！数字已完全对齐更新！")
     st.session_state["just_recorded"] = False
