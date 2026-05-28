@@ -64,7 +64,14 @@ if 'ASYNC_EXECUTOR' not in st.session_state:
 
 @st.cache_resource
 def init_chroma_and_inject_profiles():
-    chroma_client = chromadb.PersistentClient(path="./memory_bank_v2")
+    import os
+    if os.path.exists("/mount/src/jerry-insight") or "STREAMLIT_RUNTIME_ENV" in os.environ:
+        # 线上云端环境：强制使用内存模式并禁用遥测，防止网络下载模型导致应用卡死
+        from chromadb.config import Settings
+        chroma_client = chromadb.EphemeralClient(settings=Settings(anonymized_telemetry=False))
+    else:
+        # 本地环境：保持你原有的 bankv2 本地持久化，完全不影响你本地的数据
+        chroma_client = chromadb.PersistentClient(path="./bankv2")
     collection = chroma_client.get_or_create_collection(name="jerry_history")
     try:
         check_exist = collection.get(ids=["rule_earphone", "rule_camera", "rule_drone", "rule_general"])
