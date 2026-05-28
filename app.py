@@ -50,46 +50,50 @@ load_dotenv()
 # 已经自动将你提供的 Token 和安全关键词进行绑定配置
 DINGTALK_WEBHOOK = "https://oapi.dingtalk.com/robot/send?access_token=6b0c4826bc4ae3c2ec313e9a5833077e6dfd1502f90a612bd8409240409c5a14"
 
-def send_dingtalk_worker(title, markdown_content):
-    """真正执行钉钉群机器人消息投递的后台工人线程"""
+def send_dingtalk_worker_sync(title, markdown_content):
+    """
+    💎【同步坚固发送网关】
+    完全放弃不稳定的后台异步线程，防止 Streamlit Cloud 容器在 st.rerun 时掐断 HTTP 请求。
+    """
     if not DINGTALK_WEBHOOK:
-        print("⚠️ 钉钉群推送失败：未配置有效的 DINGTALK_WEBHOOK 凭证。")
-        return
+        st.toast("⚠️ 未检测到 DINGTALK_WEBHOOK 凭证", icon="❌")
+        return {"errcode": -1, "errmsg": "No webhook url"}
 
     headers = {"Content-Type": "application/json;charset=utf-8"}
     
-    # 封装钉钉专用的标准 Markdown 消息块
-    # 💡 内部强制塞入安全设置关键词 【Jerry风控中心】，避免因关键字校验不通过被钉钉拦截
+    # 强制加上安全校验关键词 【Jerry风控中心】
+    full_title = f"Jerry风控中心 - {title}"
     data = {
         "msgtype": "markdown",
         "markdown": {
-            "title": title,
+            "title": full_title,
             "text": f"## Jerry风控中心 · 实时回执\n\n{markdown_content}"
         }
     }
 
     try:
-        # 向钉钉开放网关抛送标准的 HTTP POST 请求（不卡防火墙与特定SSL端口）
+        # 使用全同步阻塞发送，设置10秒超时，确保完全送达并拿到返回值
         response = requests.post(DINGTALK_WEBHOOK, data=json.dumps(data), headers=headers, timeout=10)
         res_json = response.json()
+        
+        # 将调试网关回执实时输出到前端界面，不用费劲翻云端日志
         if res_json.get("errcode") == 0:
-            print("💥【钉钉推送成功】风控审计通知已顺利送达群聊！")
+            st.toast("💥【钉钉推送成功】已顺利送达群聊！", icon="✅")
         else:
-            print(f"❌【钉钉内部错误】发送失败，错误码: {res_json.get('errcode')}, 原因: {res_json.get('errmsg')}")
+            st.toast(f"❌【钉钉内部错误】码: {res_json.get('errcode')}, 原因: {res_json.get('errmsg')}", icon="🚨")
+        return res_json
     except Exception as e:
-        print(f"⚠️ 钉钉大厂网关异步投递发生异常: {e}")
+        st.toast(f"⚠️ 钉钉大厂网关网络异常: {e}", icon="📡")
+        return {"errcode": -2, "errmsg": str(e)}
 
-# ✨【保持原有关联与接口签名不变】：内部重构为纯异步多线程调用钉钉机器人
+# ✨【保持原有总线接口签名完全一致】：内部重构为安全的同步拦截器
 def global_pure_async_notify(ding_token, wx_token, content):
     """
-    完全切断 Streamlit 脐带的后台纯净线程，用钉钉通道对齐原发送总线
+    为了不改动你下面 col1 和 col2 的核心调用链，保持函数名和入参完全不变。
+    内部抛弃危险的多线程，直接走同步稳妥通道。
     """
-    title = "Jerry风控中心资产变动"
-    print(f"📡 [安全钉钉机器人通道激活] 正在启动后台异步线程...")
-    
-    # 依然拉起后台多线程，防止阻塞你的网页刷新
-    thr = threading.Thread(target=send_dingtalk_worker, args=(title, content))
-    thr.start()
+    title = "资产动态调整"
+    return send_dingtalk_worker_sync(title, content)
 
 FILE_LOCK = threading.Lock()
 PROFILE_FILE = "jerry_profile.json"
@@ -160,7 +164,7 @@ class JerryAgentHarness:
         system_instruction = (
             "你是 Jerry-Insight 系统【首席风控审计官】，代号“铁算盘”。\n"
             "我们要审计的商品是：【" + str(item_name) + "】。\n\n"
-            "【❗⚠️ 核心死命令 ⚠️vl】\n"
+            "【❗⚠️ 核心死命令 ⚠️】\n"
             "你必须且只能输出标准的 JSON 块，禁止包含 any JSON 之外的问候性、引言或多余寒暄。你的输出格式必须 be 以下两种之一：\n\n"
             "1. 如果需要继续追查搜索：\n"
             "{\"action\": \"Call_Web_Search\", \"action_input\": \"关键词\"}\n\n"
@@ -211,9 +215,7 @@ def run_fsm_scout_pipeline(query, status_widget):
     future_web = st.session_state['ASYNC_EXECUTOR'].submit(web_search_pro, clean_keyword)
     future_crawler = st.session_state['ASYNC_EXECUTOR'].submit(crawl_smzdm_price, clean_keyword)
     
-    # 🛡️ 加上异常捕获，防止 Chroma 数据库崩溃连累整个发信和风控流程
     try:
-        # 加上指纹库空值和大小安全盾检测，彻底杜绝 HNSW 数组异常
         existing_data = memory_collection.get()
         if not existing_data or not existing_data.get("ids") or len(existing_data["ids"]) == 0:
             long_term_context = "暂无历史档案存证。"
@@ -258,7 +260,6 @@ with st.sidebar:
             if all_ids: memory_collection.delete(ids=all_ids)
         except: pass
         
-        # 🚨 清理数据库的同时物理炸毁负数老账本
         if os.path.exists(PROFILE_FILE):
             try: os.remove(PROFILE_FILE)
             except: pass
@@ -269,7 +270,7 @@ with st.sidebar:
         st.session_state["has_searched"] = False
         st.session_state["just_recorded"] = False
 
-    st.button("🧼 一键重置指纹数据库", type="secondary", use_container_width=True, on_click=super_clear_all_states)
+    st.button("🧼 一键重置指纹数据库", type="secondary", width=250, on_click=super_clear_all_states)
     st.write("---")
 
     st.subheader("📊 铁算盘·资产风控看板")
@@ -397,7 +398,7 @@ if current_task:
             st.error(f"引擎报错: {e}")
 
 # ==========================================================
-# 📊 6. 核心资产卡点修复与异步通知触发
+# 📊 6. 核心资产卡点修复与同步通知触发
 # ==========================================================
 if st.session_state['LAST_AUDIT']:
     st.write("---")
@@ -433,16 +434,11 @@ if st.session_state['LAST_AUDIT']:
                 f"👉 **本次扣减金额**：`{audit_price} 元`\n\n"
                 f"💰 **本月卡内当前剩余流动资金**：**{profile['current_surplus']} 元**\n\n"
                 f"--- \n"
-                f"» *Jerry风控中心 铁算盘自动审计审计点出证完毕*"
+                f"» *Jerry风控中心 铁算盘自动审计点出证完毕*"
             )
             
-            # 异步线程分流，调用全新钉钉通知总线
-            st.session_state['ASYNC_EXECUTOR'].submit(
-                global_pure_async_notify, 
-                None, 
-                None, 
-                msg_content
-            )
+            # ⚡ 彻底移除 submit 异步总线，改为100%能够发出成功的同步阻塞验证
+            global_pure_async_notify(None, None, msg_content)
             
             # 清洗状态弹回
             st.session_state["active_query"] = None
@@ -467,15 +463,11 @@ if st.session_state['LAST_AUDIT']:
                 f"✨ **本次理智帮您守住资金**：`{audit_price} 元`\n\n"
                 f"🔒 **资产安全等级已自动上调！继续保持！**\n\n"
                 f"--- \n"
-                f"» *Jerry风控中心 铁算盘自动审计审计点出证完毕*"
+                f"» *Jerry风控中心 铁算盘自动审计点出证完毕*"
             )
             
-            st.session_state['ASYNC_EXECUTOR'].submit(
-                global_pure_async_notify, 
-                None, 
-                None, 
-                msg_content
-            )
+            # ⚡ 彻底移除 submit 异步总线，改为100%能够发出成功的同步阻塞验证
+            global_pure_async_notify(None, None, msg_content)
             
             st.session_state["active_query"] = None
             st.session_state["has_searched"] = False
@@ -492,8 +484,12 @@ st.write("---")
 st.subheader("🧪 钉钉机器人通道联调测试")
 if st.button("🚀 强制发送一封测试消息到我的钉钉", use_container_width=True):
     with st.spinner("正在向钉钉官方网关全速投递中..."):
-        send_dingtalk_worker(
+        # 强制走同步回执通道
+        res = send_dingtalk_worker_sync(
             "通道联调测试", 
-            "### 🎉 恭喜！通道联调成功\n\n当你看到这条高亮卡片消息时，说明你的钉钉机器人 Webhook Token 配置完全正确！海外服务器到大厂群聊的 HTTP 通道已经彻底被打通！\n\n*安全设置校验关键词已通过：Jerry风控中心*"
+            "### 🎉 恭喜！通道联调成功\n\n当你看到这条消息时，说明你的钉钉机器人 Webhook 通道已经稳如磐石地被打通了！\n\n*安全设置校验关键词已通过：Jerry风控中心*"
         )
-    st.success("💥 调试指令已向钉钉服务器抛出！去看看你的群里有没有弹出新卡片吧！")
+        if res and res.get("errcode") == 0:
+            st.success("💥 钉钉网关已返回成功的回执 (errcode: 0)！手机震动了没？！")
+        else:
+            st.error(f"❌ 依然被阻断，网关说：{res}")
