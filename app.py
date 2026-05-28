@@ -11,11 +11,6 @@ import requests
 from openai import OpenAI
 from concurrent.futures import ThreadPoolExecutor
 
-# 新增邮件底层依赖库
-import smtplib
-from email.mime.text import MIMEText
-from email.header import Header
-
 # =====================================================================
 # 🔒 1. 全局配置与环境初始化
 # =====================================================================
@@ -45,51 +40,55 @@ from tools.mcp_server import JerryMcpServer
 from core.brain import ask_llm
 from tools.search import web_search_pro
 from tools.price_crawler import crawl_smzdm_price  
-from core.jerry_fsm_agent import JerryFSMAgent     
+from core.jerry_fsm_agent import JerryFSMAgent      
 from data.sql_db import save_audit_log
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# 📧 【安全通道平替】：放弃老旧钉钉、微信，全量读取云端网页 Secrets 里的 QQ 邮件通道配置
-SMTP_SERVER = st.secrets.get("SMTP_SERVER", "smtp.qq.com")
-SMTP_PORT = int(st.secrets.get("SMTP_PORT", 465))
-EMAIL_SENDER = st.secrets.get("EMAIL_SENDER", "962285016@qq.com").strip()
-EMAIL_PASSWORD = st.secrets.get("EMAIL_PASSWORD", "rurgtzqvhadhbahh").strip() # 你的16位专属代码
-EMAIL_RECEIVER = st.secrets.get("EMAIL_RECEIVER", "962285016@qq.com").strip()
+# 🤖 【钉钉通道安全注入】：全量使用你的专属安全 Webhook
+# 已经自动将你提供的 Token 和安全关键词进行绑定配置
+DINGTALK_WEBHOOK = "https://oapi.dingtalk.com/robot/send?access_token=6b0c4826bc4ae3c2ec313e9a5833077e6dfd1502f90a612bd8409240409c5a14"
 
-def send_email_worker(subject, content):
-    """真正执行邮件发送的后台工人线程"""
-    if not EMAIL_SENDER or not EMAIL_PASSWORD:
-        print("⚠️ 邮件发送失败：云端控制台没有配置 EMAIL_SENDER 或 EMAIL_PASSWORD。")
+def send_dingtalk_worker(title, markdown_content):
+    """真正执行钉钉群机器人消息投递的后台工人线程"""
+    if not DINGTALK_WEBHOOK:
+        print("⚠️ 钉钉群推送失败：未配置有效的 DINGTALK_WEBHOOK 凭证。")
         return
 
-    # 创建符合标准的 MIME 邮件结构
-    message = MIMEText(content, 'plain', 'utf-8')
-    message['From'] = Header(f"Jerry风控中心 <{EMAIL_SENDER}>", 'utf-8')
-    message['To'] = Header(EMAIL_RECEIVER, 'utf-8')
-    message['Subject'] = Header(subject, 'utf-8')
+    headers = {"Content-Type": "application/json;charset=utf-8"}
+    
+    # 封装钉钉专用的标准 Markdown 消息块
+    # 💡 内部强制塞入安全设置关键词 【Jerry风控中心】，避免因关键字校验不通过被钉钉拦截
+    data = {
+        "msgtype": "markdown",
+        "markdown": {
+            "title": title,
+            "text": f"## Jerry风控中心 · 实时回执\n\n{markdown_content}"
+        }
+    }
 
     try:
-        # 使用工业级 SSL 465 安全加密连接腾讯服务器，海外服务器秒通不丢包
-        server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, timeout=15)
-        server.login(EMAIL_SENDER, EMAIL_PASSWORD)
-        server.sendmail(EMAIL_SENDER, [EMAIL_RECEIVER], message.as_string())
-        server.quit()
-        print(f"💥【邮件发送成功】通知已成功投递至收件箱({EMAIL_RECEIVER})！")
+        # 向钉钉开放网关抛送标准的 HTTP POST 请求（不卡防火墙与特定SSL端口）
+        response = requests.post(DINGTALK_WEBHOOK, data=json.dumps(data), headers=headers, timeout=10)
+        res_json = response.json()
+        if res_json.get("errcode") == 0:
+            print("💥【钉钉推送成功】风控审计通知已顺利送达群聊！")
+        else:
+            print(f"❌【钉钉内部错误】发送失败，错误码: {res_json.get('errcode')}, 原因: {res_json.get('errmsg')}")
     except Exception as e:
-        print(f"⚠️ 跨境邮件发送异常，报错原因: {e}")
+        print(f"⚠️ 钉钉大厂网关异步投递发生异常: {e}")
 
-# ✨【保持原有关联】：不改动后面任何逻辑，保留原函数签名，内部重构为多线程安全发信
+# ✨【保持原有关联与接口签名不变】：内部重构为纯异步多线程调用钉钉机器人
 def global_pure_async_notify(ding_token, wx_token, content):
     """
-    完全切断 Streamlit 脐带的后台纯净线程，用邮件通道对齐原发送总线
+    完全切断 Streamlit 脐带的后台纯净线程，用钉钉通道对齐原发送总线
     """
-    subject = "【Jerry风控中心】资产变动与全网审计回执"
-    print(f"📡 [安全邮件通道激活] 正在启动后台异步线程...")
+    title = "Jerry风控中心资产变动"
+    print(f"📡 [安全钉钉机器人通道激活] 正在启动后台异步线程...")
     
     # 依然拉起后台多线程，防止阻塞你的网页刷新
-    thr = threading.Thread(target=send_email_worker, args=(subject, content))
+    thr = threading.Thread(target=send_dingtalk_worker, args=(title, content))
     thr.start()
 
 FILE_LOCK = threading.Lock()
@@ -114,7 +113,7 @@ hybrid_retriever = JaccardHybridRetriever(memory_collection)
 def get_dynamic_profile():
     with FILE_LOCK:
         if not os.path.exists(PROFILE_FILE):
-            default_profile = {"user_name": "Jerry", "monthly_budget": 2000.0, "current_surplus": 850.0, "fixed_expenses": {"饮食": 1200, "话费交通": 300}, "recent_purchases": []}
+            default_profile = {"user_name": "Jerry", "monthly_budget": 10000.0, "current_surplus": 10000.0, "fixed_expenses": {"饮食": 1200, "话费交通": 300}, "recent_purchases": []}
             with open(PROFILE_FILE, "w", encoding="utf-8") as f: 
                 json.dump(default_profile, f, ensure_ascii=False, indent=4)
             return default_profile
@@ -161,7 +160,7 @@ class JerryAgentHarness:
         system_instruction = (
             "你是 Jerry-Insight 系统【首席风控审计官】，代号“铁算盘”。\n"
             "我们要审计的商品是：【" + str(item_name) + "】。\n\n"
-            "【❗⚠️ 核心死命令 ⚠️❗】\n"
+            "【❗⚠️ 核心死命令 ⚠️vl】\n"
             "你必须且只能输出标准的 JSON 块，禁止包含 any JSON 之外的问候性、引言或多余寒暄。你的输出格式必须 be 以下两种之一：\n\n"
             "1. 如果需要继续追查搜索：\n"
             "{\"action\": \"Call_Web_Search\", \"action_input\": \"关键词\"}\n\n"
@@ -214,10 +213,16 @@ def run_fsm_scout_pipeline(query, status_widget):
     
     # 🛡️ 加上异常捕获，防止 Chroma 数据库崩溃连累整个发信和风控流程
     try:
-        long_term_context = future_memory.result()
+        # 加上指纹库空值和大小安全盾检测，彻底杜绝 HNSW 数组异常
+        existing_data = memory_collection.get()
+        if not existing_data or not existing_data.get("ids") or len(existing_data["ids"]) == 0:
+            long_term_context = "暂无历史档案存证。"
+        else:
+            available_count = min(len(existing_data["ids"]), 2)
+            long_term_context = future_memory.result()
     except Exception as chroma_err:
         print(f"⚠️ [Chroma 兜底触发] 历史库检索发生异常，已自动跳过: {chroma_err}")
-        long_term_context = "" # 发生异常时给个空字符串，确保程序继续往下走
+        long_term_context = "历史档案加载隔离状态。" 
 
     raw_info_blocks, raw_info_text, price_table_data = future_web.result()
     
@@ -252,6 +257,12 @@ with st.sidebar:
             all_ids = memory_collection.get()["ids"]
             if all_ids: memory_collection.delete(ids=all_ids)
         except: pass
+        
+        # 🚨 清理数据库的同时物理炸毁负数老账本
+        if os.path.exists(PROFILE_FILE):
+            try: os.remove(PROFILE_FILE)
+            except: pass
+            
         st.session_state['SHORT_TERM_MEMORY'] = []
         st.session_state['LAST_AUDIT'] = None
         st.session_state["active_query"] = None
@@ -414,10 +425,18 @@ if st.session_state['LAST_AUDIT']:
             except: 
                 pass
             
-            # 📧 核心资产变动邮件通知内容
-            msg_content = f"【记账回执】\n已买入商品: {audit_item}\n成功扣减流动资金: {audit_price} 元\n卡内当前最新剩余余额: {profile['current_surplus']} 元。"
+            # 🤖 核心资产变动钉钉 Markdown 推送内容
+            msg_content = (
+                f"### 🪙 账单自动核销支出回执\n\n"
+                f"--- \n\n"
+                f"👉 **已购入好物**：`{audit_item}`\n\n"
+                f"👉 **本次扣减金额**：`{audit_price} 元`\n\n"
+                f"💰 **本月卡内当前剩余流动资金**：**{profile['current_surplus']} 元**\n\n"
+                f"--- \n"
+                f"» *Jerry风控中心 铁算盘自动审计审计点出证完毕*"
+            )
             
-            # 使用原有的异步发送框架触发，这里后面两个空参数是为了兼容旧签名，内部不使用
+            # 异步线程分流，调用全新钉钉通知总线
             st.session_state['ASYNC_EXECUTOR'].submit(
                 global_pure_async_notify, 
                 None, 
@@ -440,8 +459,16 @@ if st.session_state['LAST_AUDIT']:
             except: 
                 pass
             
-            # 📧 核心风控拦截邮件通知内容
-            msg_content = f"【风控拦截回执】\nJerry-Insight 铁算盘已成功帮您拦截恶意/冲动消费商品: {audit_item}。\n本次已为您安全节省不必要开支共计: {audit_price} 元金币！"
+            # 🤖 核心风控拦截钉钉机器人 Markdown 推送内容
+            msg_content = (
+                f"### 🚨 铁算盘守门员：成功风控拦截\n\n"
+                f"--- \n\n"
+                f"🙅‍♂️ **已成功帮您掐断冲动消费**：`{audit_item}`\n\n"
+                f"✨ **本次理智帮您守住资金**：`{audit_price} 元`\n\n"
+                f"🔒 **资产安全等级已自动上调！继续保持！**\n\n"
+                f"--- \n"
+                f"» *Jerry风控中心 铁算盘自动审计审计点出证完毕*"
+            )
             
             st.session_state['ASYNC_EXECUTOR'].submit(
                 global_pure_async_notify, 
@@ -462,11 +489,11 @@ if st.session_state["just_recorded"]:
     st.session_state["just_recorded"] = False
 
 st.write("---")
-st.subheader("🧪 邮箱通道联调测试")
-if st.button("🚀 强制发送一封测试邮件到我的QQ邮箱", use_container_width=True):
-    with st.spinner("正在通过加密通道闪电投递中..."):
-        send_email_worker(
-            "【Jerry风控中心】通道联调成功", 
-            "恭喜！当你看到这封邮件时，说明你的 16 位授权码配置完全正确，Streamlit 跨境发送通道已彻底打通！"
+st.subheader("🧪 钉钉机器人通道联调测试")
+if st.button("🚀 强制发送一封测试消息到我的钉钉", use_container_width=True):
+    with st.spinner("正在向钉钉官方网关全速投递中..."):
+        send_dingtalk_worker(
+            "通道联调测试", 
+            "### 🎉 恭喜！通道联调成功\n\n当你看到这条高亮卡片消息时，说明你的钉钉机器人 Webhook Token 配置完全正确！海外服务器到大厂群聊的 HTTP 通道已经彻底被打通！\n\n*安全设置校验关键词已通过：Jerry风控中心*"
         )
-    st.success("💥 触发指令已发出！请去查看你的 QQ 邮箱（包括垃圾箱）！")
+    st.success("💥 调试指令已向钉钉服务器抛出！去看看你的群里有没有弹出新卡片吧！")
