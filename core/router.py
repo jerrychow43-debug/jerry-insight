@@ -1,9 +1,8 @@
-# Jerry-Insight-Pro/core/router.py
 import re
 import sys
 import os
 
-# ✨ 【彻底根治 KeyError 暗雷】：动态确保项目根目录在 Python 搜索路径第一位
+# ✨ 动态确保项目根目录在 Python 搜索路径第一位
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.brain import ask_llm
@@ -13,7 +12,7 @@ def classify_intent(query):
     意图识别：防止 Agent 乱跑。
     具备对大脑连接失败时的【真实自愈放行】机制。
     """
-    if len(query.strip()) < 2:
+    if not query or len(query.strip()) < 2:
         return "INVALID"
 
     prompt = f"""
@@ -75,9 +74,9 @@ def clean_query_to_entity(query: str) -> str:
         res = ask_llm([{"role": "user", "content": prompt}])
         entity = res.strip().replace('"', '').replace("'", "")
         
-        # 2. 拦截安全阀：如果大模型判定非商品，或网络失败，或返回的词长得离谱，直接硬熔断
-        if "NONE" in entity.upper() or "失败" in entity or len(entity) > 12:
-            # 针对“大额转账审计”这类输入，直接返回 NONE，让爬虫知道闭嘴
+        # 2. 拦截安全阀：将长度限制放宽到 24 字符。
+        # 很多商品带上型号和规格（例如：MacBook Pro 16寸 M3）很容易超过12个字，改为24更安全。
+        if "NONE" in entity.upper() or "失败" in entity or len(entity) > 24:
             return "NONE"
             
         return entity
@@ -89,4 +88,4 @@ def clean_query_to_entity(query: str) -> str:
         for phrase in stop_phrases:
             clean_keyword = clean_keyword.replace(phrase, "")
         clean_keyword = re.sub(r'[^\w\s\u4e00-\u9fa5]', '', clean_keyword).strip()
-        return clean_keyword if len(clean_keyword) <= 12 else "NONE"
+        return clean_keyword if len(clean_keyword) <= 24 else "NONE"

@@ -29,7 +29,7 @@ if 'LAST_AUDIT' not in st.session_state:
     st.session_state['LAST_AUDIT'] = None
 
 # =====================================================================
-# 🛠️ 2. 核心底层组件引入
+# 🛠️ 2. 核心底层组件引入与环境配置对齐
 # =====================================================================
 from bs4 import BeautifulSoup  
 from core.router import classify_intent, clean_query_to_entity
@@ -46,37 +46,50 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# 在主线程中提前把 Secrets 读出来，断绝子线程对 st.secrets 的依赖
-RAW_WECHAT_TOKEN = st.secrets.get("PUSH_TOKEN", "")
-RAW_DING_WEBHOOK = st.secrets.get("DING_WEBHOOK", "")
+# ✨【配置对齐】：优先从 Streamlit Secrets 读取纯净 Token，若无则降级读取环境配置
+WECHAT_TOKEN = st.secrets.get("PUSH_TOKEN", os.getenv("PUSH_TOKEN", "")).strip()
 
-if "access_token=" in RAW_DING_WEBHOOK:
-    DINGTALK_TOKEN = RAW_DING_WEBHOOK.split("access_token=")[1].split("&")[0].strip()
+# 兼容老版 DING_WEBHOOK 拼接和新版纯净 DING_TOKEN
+RAW_DING = st.secrets.get("DING_TOKEN", st.secrets.get("DING_WEBHOOK", os.getenv("DING_WEBHOOK", "")))
+if "access_token=" in RAW_DING:
+    DINGTALK_TOKEN = RAW_DING.split("access_token=")[1].split("&")[0].strip()
 else:
-    DINGTALK_TOKEN = RAW_DING_WEBHOOK.strip()
-WECHAT_TOKEN = RAW_WECHAT_TOKEN.strip()
+    DINGTALK_TOKEN = RAW_DING.strip()
 
-# ✨【多线程钢铁防线】：不引用任何第三方 notify 库，完全用纯 requests 独立发送
+# ✨【多线程钢铁防线】：自带前置触发词 + 异常透传打印日志
 def global_pure_async_notify(ding_token, wx_token, content):
     """
-    完全切断 Streamlit 脐带的后台纯净线程，100% 解决 capture 冲突，确保消息必达
+    完全切断 Streamlit 脐带的后台纯净线程，带前置安全词，确保消息必达
     """
+    # 强制加上前置安全词，保证触发钉钉后台的“自定义关键词”过滤
+    safe_content = f"【Jerry风控中心账户变动通知】\n{content}"
+    print(f"📡 [后台推送激活] 准备发送内容:\n{safe_content}")
+    
     if ding_token:
+        url = f"https://oapi.dingtalk.com/robot/send?access_token={ding_token}"
         try:
-            url = f"https://oapi.dingtalk.com/robot/send?access_token={ding_token}"
-            requests.post(url, json={"msgtype": "text", "text": {"content": content}}, timeout=5)
+            res = requests.post(url, json={"msgtype": "text", "text": {"content": safe_content}}, timeout=8)
+            print(f"【💥 钉钉云端接口回执】: 状态码 {res.status_code}, 内容: {res.text}")
         except Exception as e:
-            print(f"后台钉钉异步发送失败: {e}")
+            print(f"⚠️ 后台钉钉异步发送网络连接失败: {e}")
             
     if wx_token:
+        # Pushed.io 标准自建/云端标准 API 接口对齐
+        url = "https://api.pushed.io/v1/push"
         try:
-            # 采用标准 Pushed 接口直连，防止调用本地模块触发隐蔽 st 报错
-            url = "https://api.pushed.io/v1/push"
-            # 如果你用的是企业微信机器人或其他接口，请在此处直接对齐 requests.post 即可
-            # 暂用标准 POST 示意，确保它不踩 st 任何红线
-            requests.post(f"https://oapi.pushed.io/send?token={wx_token}", data={"content": content}, timeout=5)
+            # 标准的 Pushed 传参：app_key 和 app_secret 在简易流中通常一致，或者直接用请求体传入 token 字段
+            payload = {
+                "app_key": wx_token,
+                "app_secret": wx_token,
+                "target_type": "app",
+                "content": safe_content
+            }
+            res = requests.post(url, data=payload, timeout=8)
+            # 如果是国内特殊自建通道，可用下方这行替换（按需切换）：
+            # res = requests.post(f"https://api.pushed.io/send?token={wx_token}", data={"content": safe_content}, timeout=8)
+            print(f"【💥 微信云端接口回执】: 状态码 {res.status_code}, 内容: {res.text}")
         except Exception as e:
-            print(f"后台微信异步发送失败: {e}")
+            print(f"⚠️ 后台微信异步发送网络连接失败: {e}")
 
 FILE_LOCK = threading.Lock()
 PROFILE_FILE = "jerry_profile.json"
@@ -118,8 +131,8 @@ def update_profile_balance(amount, item_name):
 
 mcp_gateway = JerryMcpServer(update_profile_balance, FILE_LOCK)
 
-api_key = st.secrets.get("DEEPSEEK_API_KEY", "")
-base_url = st.secrets.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+api_key = st.secrets.get("DEEPSEEK_API_KEY", os.getenv("DEEPSEEK_API_KEY", ""))
+base_url = st.secrets.get("DEEPSEEK_BASE_URL", os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"))
 openai_client = OpenAI(api_key=api_key, base_url=base_url)
 
 if 'GLOBAL_MEMORY_MANAGER' not in st.session_state: 
@@ -148,7 +161,7 @@ class JerryAgentHarness:
             "你是 Jerry-Insight 系统【首席风控审计官】，代号“铁算盘”。\n"
             "我们要审计的商品是：【" + str(item_name) + "】。\n\n"
             "【❗⚠️ 核心死命令 ⚠️❗】\n"
-            "你必须且只能输出标准的 JSON 块，禁止包含任何 JSON 之外的问候性、引言或多余寒暄。你的输出格式必须是以下两种之一：\n\n"
+            "你必须且只能输出标准的 JSON 块，禁止包含 any JSON 之外的问候性、引言或多余寒暄。你的输出格式必须是以下两种之一：\n\n"
             "1. 如果需要继续追查搜索：\n"
             "{\"action\": \"Call_Web_Search\", \"action_input\": \"关键词\"}\n\n"
             "2. 如果情报足够，给出最终审计报告（核心内容）：\n"
@@ -221,7 +234,7 @@ def run_fsm_scout_pipeline(query, status_widget):
     return raw_answer, clean_keyword, info_blocks, price_table_data, crawler_results, long_term_context
 
 # ==========================================================
-# 🎨 5. UI 渲染与侧边栏（✨已彻底砍掉多余输入框，实现干净回弹）
+# 🎨 5. UI 渲染与侧边栏
 # ==========================================================
 with st.sidebar:
     st.header("🕵️ Jerry-Insight 调度中心")
@@ -274,7 +287,7 @@ st.title("🛡️ Jerry-Insight Pro v3.5+")
 dynamic_profile = get_dynamic_profile()
 st.markdown(f"""> 💳 **Jerry 的当前实时资产面板** ｜ 本月卡里剩余流动资金: :orange[{dynamic_profile['current_surplus']} 元]""")
 
-# ✨【防不弹回终极大招】：使用显式全局 Key 控制输入框缓存
+# 使用显式全局 Key 控制输入框缓存
 chat_query = st.chat_input("输入商品名称，开始资产风控审计...", key="user_chat_input_core_key")
 if chat_query and chat_query.strip():
     st.session_state["active_query"] = chat_query.strip()
@@ -366,7 +379,7 @@ if current_task:
             st.error(f"引擎报错: {e}")
 
 # ==========================================================
-# 📊 6. 核心资产卡点修复（✨解决不回弹与多线程通知的终极闭环）
+# 📊 6. 核心资产卡点修复与异步通知触发
 # ==========================================================
 if st.session_state['LAST_AUDIT']:
     st.write("---")
@@ -394,8 +407,8 @@ if st.session_state['LAST_AUDIT']:
             except: 
                 pass
             
-            # 🚀【绝对隔离异步发送】：使用在最顶部配置好的纯净全局函数提交，不依赖任何第三方未清洗的 local 函数
-            msg_content = f"账户变动：已买入 {audit_item}, 扣减 {audit_price}元, 当前卡内剩余: {profile['current_surplus']}元。"
+            # 发送核心通知
+            msg_content = f"已买入 {audit_item}, 成功扣减 {audit_price} 元, 当前卡内剩余流动资金: {profile['current_surplus']} 元。"
             st.session_state['ASYNC_EXECUTOR'].submit(
                 global_pure_async_notify, 
                 DINGTALK_TOKEN, 
@@ -403,7 +416,7 @@ if st.session_state['LAST_AUDIT']:
                 msg_content
             )
             
-            # 🧼【熔断清洗状态】：斩断一切标识，同时清空底部对话框的底层内燃缓存！
+            # 清洗状态弹回
             st.session_state["active_query"] = None
             st.session_state["has_searched"] = False
             st.session_state['LAST_AUDIT'] = None
@@ -418,8 +431,7 @@ if st.session_state['LAST_AUDIT']:
             except: 
                 pass
             
-            # 🚀【安全异步拦截通知】
-            msg_content = f"风控成功：已成功为您拦截商品 {audit_item}，安全省下 {audit_price} 元！"
+            msg_content = f"风控拦截：已成功拦截恶意消费商品 {audit_item}，为您安全省下 {audit_price} 元金币！"
             st.session_state['ASYNC_EXECUTOR'].submit(
                 global_pure_async_notify, 
                 DINGTALK_TOKEN, 
@@ -427,7 +439,6 @@ if st.session_state['LAST_AUDIT']:
                 msg_content
             )
             
-            # 🧼【熔断清洗状态】
             st.session_state["active_query"] = None
             st.session_state["has_searched"] = False
             st.session_state['LAST_AUDIT'] = None
