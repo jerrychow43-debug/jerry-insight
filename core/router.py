@@ -1,5 +1,6 @@
 import re
-from core.brain import ask_llm
+```python
+    from core.brain import ask_llm
 
 def classify_intent(query):
     """
