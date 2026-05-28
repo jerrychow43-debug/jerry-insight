@@ -65,7 +65,7 @@ if 'ASYNC_EXECUTOR' not in st.session_state:
 
 @st.cache_resource
 def init_chroma_and_inject_profiles():
-    chroma_client = chromadb.PersistentClient(path="./memory_bank")
+    chroma_client = chromadb.PersistentClient(path="./memory_bank_v2")
     collection = chroma_client.get_or_create_collection(name="jerry_history")
     try:
         check_exist = collection.get(ids=["rule_earphone", "rule_camera", "rule_drone", "rule_general"])
