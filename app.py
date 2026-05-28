@@ -47,8 +47,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # 🤖 【钉钉通道安全注入】：全量使用你的专属安全 Webhook
-# 已经自动将你提供的 Token 和安全关键词进行绑定配置
 DINGTALK_WEBHOOK = "https://oapi.dingtalk.com/robot/send?access_token=2f4f18adb7a69d71e3faa1e90879d6987c75cbb16b6a7c10fe870b4e9a051c0c"
+
 def send_dingtalk_worker_sync(title, markdown_content):
     """
     💎【同步坚固发送网关】
@@ -71,11 +71,8 @@ def send_dingtalk_worker_sync(title, markdown_content):
     }
 
     try:
-        # 使用全同步阻塞发送，设置10秒超时，确保完全送达并拿到返回值
         response = requests.post(DINGTALK_WEBHOOK, data=json.dumps(data), headers=headers, timeout=10)
         res_json = response.json()
-        
-        # 将调试网关回执实时输出到前端界面，不用费劲翻云端日志
         if res_json.get("errcode") == 0:
             st.toast("💥【钉钉推送成功】已顺利送达群聊！", icon="✅")
         else:
@@ -87,10 +84,6 @@ def send_dingtalk_worker_sync(title, markdown_content):
 
 # ✨【保持原有总线接口签名完全一致】：内部重构为安全的同步拦截器
 def global_pure_async_notify(ding_token, wx_token, content):
-    """
-    为了不改动你下面 col1 和 col2 的核心调用链，保持函数名和入参完全不变。
-    内部抛弃危险的多线程，直接走同步稳妥通道。
-    """
     title = "资产动态调整"
     return send_dingtalk_worker_sync(title, content)
 
@@ -383,10 +376,16 @@ if current_task:
             st.markdown("### 🛡️ Jerry-Insight 深度审计报告")
             st.markdown(display_answer)
 
+            # 🛠️ 【价格精准提取修复点】：用正则直接提取 estimated_price 后面的数值，防止 JSON 失败降级到 3.5 元
             detected_price = 3.5
             if "PRICE_DATA:" in raw_answer:
                 try: 
-                    detected_price = float(json.loads(raw_answer.split("PRICE_DATA:")[1].strip())["estimated_price"])
+                    price_part = raw_answer.split("PRICE_DATA:")[1].strip()
+                    price_match = re.search(r'"estimated_price"\s*:\s*([0-9.]+)', price_part)
+                    if price_match:
+                        detected_price = float(price_match.group(1))
+                    else:
+                        detected_price = float(json.loads(price_part)["estimated_price"])
                 except: 
                     pass
             
@@ -436,10 +435,9 @@ if st.session_state['LAST_AUDIT']:
                 f"» *Jerry风控中心 铁算盘自动审计点出证完毕*"
             )
             
-            # ⚡ 彻底移除 submit 异步总线，改为100%能够发出成功的同步阻塞验证
             global_pure_async_notify(None, None, msg_content)
             
-            # 清洗状态弹回
+            # 🧼 【彻底蒸发界面修复点】：强制清空当前状态，阻断页面二次渲染旧报告，杜绝反复扣钱
             st.session_state["active_query"] = None
             st.session_state["has_searched"] = False
             st.session_state['LAST_AUDIT'] = None
@@ -449,7 +447,7 @@ if st.session_state['LAST_AUDIT']:
     with col2:
         if st.button(f"🙅‍♂️ 听从劝阻 (放弃购买)", type="secondary", key="btn_cancel_deduct", use_container_width=True):
             try:
-                memory_collection.add(documents=[f"关于'{audit_item}'的购买决策。建议避坑，[已拦截]"], ids=[f"block_{int(time.time())}"])
+                memory_collection.add(documents=[f"关于'{audit_item}'的购买决策。建议避坑，[开拦截]"], ids=[f"block_{int(time.time())}"])
                 save_audit_log(current_task, "用户选择听从风控劝阻")
             except: 
                 pass
@@ -465,9 +463,9 @@ if st.session_state['LAST_AUDIT']:
                 f"» *Jerry风控中心 铁算盘自动审计点出证完毕*"
             )
             
-            # ⚡ 彻底移除 submit 异步总线，改为100%能够发出成功的同步阻塞验证
             global_pure_async_notify(None, None, msg_content)
             
+            # 🧼 【彻底蒸发界面修复点】：强制清空当前状态，阻断页面二次渲染旧报告
             st.session_state["active_query"] = None
             st.session_state["has_searched"] = False
             st.session_state['LAST_AUDIT'] = None
@@ -483,7 +481,6 @@ st.write("---")
 st.subheader("🧪 钉钉机器人通道联调测试")
 if st.button("🚀 强制发送一封测试消息到我的钉钉", use_container_width=True):
     with st.spinner("正在向钉钉官方网关全速投递中..."):
-        # 强制走同步回执通道
         res = send_dingtalk_worker_sync(
             "通道联调测试", 
             "### 🎉 恭喜！通道联调成功\n\n当你看到这条消息时，说明你的钉钉机器人 Webhook 通道已经稳如磐石地被打通了！\n\n*安全设置校验关键词已通过：Jerry风控中心*"
