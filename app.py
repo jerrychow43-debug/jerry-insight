@@ -212,7 +212,13 @@ def run_fsm_scout_pipeline(query, status_widget):
     future_web = st.session_state['ASYNC_EXECUTOR'].submit(web_search_pro, clean_keyword)
     future_crawler = st.session_state['ASYNC_EXECUTOR'].submit(crawl_smzdm_price, clean_keyword)
     
-    long_term_context = future_memory.result()
+    # 🛡️ 加上异常捕获，防止 Chroma 数据库崩溃连累整个发信和风控流程
+    try:
+        long_term_context = future_memory.result()
+    except Exception as chroma_err:
+        print(f"⚠️ [Chroma 兜底触发] 历史库检索发生异常，已自动跳过: {chroma_err}")
+        long_term_context = "" # 发生异常时给个空字符串，确保程序继续往下走
+
     raw_info_blocks, raw_info_text, price_table_data = future_web.result()
     
     crawler_results = None
