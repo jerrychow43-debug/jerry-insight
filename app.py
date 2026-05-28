@@ -183,11 +183,9 @@ class JerryAgentHarness:
                     clean_json_str = json_match.group(0)
                 else:
                     if "```json" in raw_output:
-                        clean_json_str = raw_output.split("
-```json")[1].split("```")[0].strip()
+                        clean_json_str = raw_output.split("```json")[1].split("```")[0].strip()
                     elif "```" in raw_output:
-                        clean_json_str = raw_output.split("
-```")[1].split("```")[0].strip()
+                        clean_json_str = raw_output.split("```")[1].split("```")[0].strip()
                     else:
                         clean_json_str = raw_output
                     
