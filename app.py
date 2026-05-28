@@ -48,8 +48,7 @@ load_dotenv()
 
 # 🤖 【钉钉通道安全注入】：全量使用你的专属安全 Webhook
 # 已经自动将你提供的 Token 和安全关键词进行绑定配置
-DINGTALK_WEBHOOK = "https://oapi.dingtalk.com/robot/send?access_token=6b0c4826bc4ae3c2ec313e9a5833077e6dfd1502f90a612bd8409240409c5a14"
-
+DINGTALK_WEBHOOK = "https://oapi.dingtalk.com/robot/send?access_token=2f4f18adb7a69d71e3faa1e90879d6987c75cbb16b6a7c10fe870b4e9a051c0c"
 def send_dingtalk_worker_sync(title, markdown_content):
     """
     💎【同步坚固发送网关】
