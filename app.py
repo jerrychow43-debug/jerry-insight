@@ -460,3 +460,13 @@ if st.session_state['LAST_AUDIT']:
 if st.session_state["just_recorded"]:
     st.success("💰 资产变更指令强制落地！数字已完全对齐更新！")
     st.session_state["just_recorded"] = False
+
+st.write("---")
+st.subheader("🧪 邮箱通道联调测试")
+if st.button("🚀 强制发送一封测试邮件到我的QQ邮箱", use_container_width=True):
+    with st.spinner("正在通过加密通道闪电投递中..."):
+        send_email_worker(
+            "【Jerry风控中心】通道联调成功", 
+            "恭喜！当你看到这封邮件时，说明你的 16 位授权码配置完全正确，Streamlit 跨境发送通道已彻底打通！"
+        )
+    st.success("💥 触发指令已发出！请去查看你的 QQ 邮箱（包括垃圾箱）！")
