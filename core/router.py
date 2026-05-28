@@ -1,5 +1,5 @@
 import re
-from .brain import ask_llm
+from core.brain import ask_llm
 
 def classify_intent(query):
     """

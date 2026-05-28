@@ -4,8 +4,11 @@ beautifulsoup4
 requests
 pandas
 tavily-python
+python-dotenv
+
 # --- 🛡️ 终极版本版本铁锁网，彻底按死所有底层冲突 ---
 numpy==1.26.4
 chromadb==0.4.24
+pydantic==1.10.15
 protobuf==4.25.3
 opentelemetry-api==1.23.0

@@ -1,7 +1,9 @@
+# Jerry-Insight-Pro/tools/search.py
 import os
 import requests
 import math
 import re
+import streamlit as st
 from tavily import TavilyClient
 
 def text_to_vector(text):
@@ -80,7 +82,8 @@ def web_search_pro(query):
     """
     终极自愈检索流：具备【短词语义约束防御】、【链接强制去重】与【纯渠道价格面板】功能
     """
-    tavily_key = os.getenv("TAVILY_API_KEY")
+    # 💡 完美对齐：优先读取云端的 TAVILY_API_KEY，全自动适配 Secrets 面板
+    tavily_key = st.secrets.get("TAVILY_API_KEY", os.getenv("TAVILY_API_KEY"))
     tavily = TavilyClient(api_key=tavily_key)
     
     # 策略：搜索引擎重构。如果搜的是超短词（如可乐），强行追加关键词把它拉回到饮料/消费品领域

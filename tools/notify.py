@@ -2,12 +2,14 @@
 import os
 import requests
 import json
+import streamlit as st
 
 def push_wechat(content):
-    """标准的微信推送通知（带强力超时容错）"""
-    token = os.getenv("PUSH_TOKEN")
+    """标准的微信推送通知（带强力超时容错与云端全局配置适配）"""
+    # 💡 完美对齐：优先读取你截图里的 PUSH_TOKEN，自动兼容云端 Secrets 和本地系统环境
+    token = st.secrets.get("PUSH_TOKEN", os.getenv("PUSH_TOKEN"))
     if not token:
-        print("【微信推送】未配置 PUSH_TOKEN")
+        print("【微信推送】未配置 PUSH_TOKEN，通知放弃发送")
         return "未配置 PUSH_TOKEN"
         
     url = 'http://www.pushplus.plus/send'
@@ -27,10 +29,11 @@ def push_wechat(content):
         return f"微信发送失败: {e}"
 
 def push_dingtalk(content, title="🛡️ Jerry-Insight 风控通报"):
-    """标准的钉钉群机器人推送（原生通道，极速稳定）"""
-    webhook_url = os.getenv("DING_WEBHOOK")
+    """标准的钉钉群机器人推送（原生通道，极速稳定，全面兼容云端配置）"""
+    # 💡 完美对齐：优先读取你截图里的 DING_WEBHOOK，自动兼容云端 Secrets 和本地系统环境
+    webhook_url = st.secrets.get("DING_WEBHOOK", os.getenv("DING_WEBHOOK"))
     if not webhook_url:
-        print("【钉钉推送】未配置 DING_WEBHOOK")
+        print("【钉钉推送】未配置 DING_WEBHOOK，通知放弃发送")
         return "未配置 DING_WEBHOOK"
         
     headers = {"Content-Type": "application/json;charset=utf-8"}
