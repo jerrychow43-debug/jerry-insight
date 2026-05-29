@@ -154,8 +154,7 @@ class JerryAgentHarness:
                 if raw_output.startswith("```json"):
                     raw_output = raw_output.replace("```json", "", 1).rstrip("```").strip()
                 elif raw_output.startswith("```"):
-                    raw_output = raw_output.replace("
-```", "", 1).rstrip("```").strip()
+                    raw_output = raw_output.replace("```", "", 1).rstrip("```").strip()
 
                 json_match = re.search(r'\{.*\}', raw_output, re.DOTALL)
                 clean_json_str = json_match.group(0) if json_match else raw_output
