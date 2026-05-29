@@ -257,7 +257,7 @@ def run_fsm_scout_pipeline(query, status_widget):
 # 🎯 🌟【核心重构区】：点击后状态瞬间硬洗刷，整个审计面板直接抹去消失 🌟
 # =======================================================================
 def callback_confirm_deduct():
-    """核销扣款回调：执行完写数据操作后，将所有展现控制变量归零，迫使界面全消失"""
+    """核销扣款回调：执行完写数据操作后，将所有展现控制变量归零，迫使界面全消失并强制rerun"""
     if st.session_state['LAST_AUDIT']:
         audit_data = st.session_state['LAST_AUDIT']
         try:
@@ -295,14 +295,18 @@ def callback_confirm_deduct():
             st.session_state["active_query"] = None
             st.session_state['LAST_AUDIT'] = None
             
+            # 7. 🔥【强制刷新】：让前端视图立刻重构，抹掉所有历史回答面板
+            st.rerun()
+            
         except Exception as err:
             print(f"回调记账安全拦截网关执行异常: {err}")
             
 def callback_cancel_deduct():
-    """放弃购买回调：同样触发无痕清空状态"""
+    """放弃购买回调：同样触发无痕清空状态并强制rerun"""
     st.session_state["just_recorded"] = "🙅‍♂️ 已听从劝阻放弃购买，未扣除任何流动资金。"
     st.session_state["active_query"] = None
     st.session_state['LAST_AUDIT'] = None
+    st.rerun()
 
 
 # ==========================================================
@@ -385,6 +389,7 @@ if chat_query and chat_query.strip():
                 
             status.update(label="🚀 FSM 流程闭合！情报与定向爬虫数据同步完毕！", state="complete", expanded=False)
             
+            # ✨ 【修复扣款变为0元的核心提取逻辑】：做更多层级的兜底，避免匹配失败 fallback 导致 0.0 元
             detected_price = 0.0
             if "PRICE_DATA:" in raw_answer:
                 try: 
@@ -399,13 +404,19 @@ if chat_query and chat_query.strip():
                 except Exception as p_err: 
                     print(f"⚠️ 价格精细化抽取未命中: {p_err}")
             
+            # 如果从 PRICE_DATA 块里拿不到（或者拿到诡异的值），则回退用正则搜索全局
             if detected_price == 0.0 or detected_price == 3.5:
                 found_numbers = re.findall(r'(\d+)\s*-\s*(\d+)\s*元', raw_answer)
                 if found_numbers:
                     detected_price = float(found_numbers[0][0])  
                 else:
                     single_nums = re.findall(r'(\d+)\s*元', raw_answer)
-                    if single_nums: detected_price = float(single_nums[0])
+                    if single_nums: 
+                        detected_price = float(single_nums[0])
+                    else:
+                        # 终极提取：只要找到数字就试着抓第一个，实在没有再保持 0
+                        all_digits = re.findall(r'([0-9.]+)', raw_answer)
+                        if all_digits: detected_price = float(all_digits[0])
 
             st.session_state['LAST_AUDIT'] = {
                 "price": detected_price, 
