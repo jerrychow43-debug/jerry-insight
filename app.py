@@ -150,9 +150,11 @@ class JerryAgentHarness:
                 raw_output = response.choices[0].message.content.strip()
                 
                 if raw_output.startswith("```json"):
-                    raw_output = raw_output.replace("```json", "", 1).rstrip("```").strip()
+                    raw_output = raw_output.replace("
+```json", "", 1).rstrip("```").strip()
                 elif raw_output.startswith("```"):
-                    raw_output = raw_output.replace("```", "", 1).rstrip("```").strip()
+                    raw_output = raw_output.replace("
+```", "", 1).rstrip("```").strip()
 
                 json_match = re.search(r'\{.*\}', raw_output, re.DOTALL)
                 clean_json_str = json_match.group(0) if json_match else raw_output
@@ -178,7 +180,8 @@ class JerryAgentHarness:
                 raw_output = final_res.choices[0].message.content.strip()
                 
                 if raw_output.startswith("```"): 
-                    raw_output = raw_output.split("```")[1].replace("json", "", 1).strip()
+                    raw_output = raw_output.split("
+```")[1].replace("json", "", 1).strip()
                 json_match = re.search(r'\{.*\}', raw_output, re.DOTALL)
                 if json_match:
                     parsed_json = json.loads(json_match.group(0))
