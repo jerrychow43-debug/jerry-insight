@@ -25,6 +25,9 @@ if 'LAST_AUDIT' not in st.session_state:
     st.session_state['LAST_AUDIT'] = None
 if 'SUBMIT_PROCESSING' not in st.session_state:
     st.session_state['SUBMIT_PROCESSING'] = False
+# 🛠️ 新增：用于记录当前这笔账单是否已经做出决策（点击过按钮）
+if 'ACTION_COMPLETED' not in st.session_state:
+    st.session_state['ACTION_COMPLETED'] = False
 
 # =====================================================================
 # 🛠️ 2. 核心底层组件引入与环境配置对齐
@@ -55,7 +58,6 @@ def send_dingtalk_worker_sync(title, markdown_content):
     headers = {"Content-Type": "application/json;charset=utf-8"}
     full_title = f"Jerry财务智能体 - {title}"
     
-    # 强制在文本内容前端暴露匹配关键字，防止自定义关键词校验失败
     data = {
         "msgtype": "markdown",
         "markdown": {
@@ -96,10 +98,10 @@ PROFILE_FILE = "jerry_profile.json"
 def init_chroma_and_inject_profiles():
     if os.path.exists("/mount/src/jerry-insight") or "STREAMLIT_RUNTIME_ENV" in os.environ:
         from chromadb.config import Settings
-        chroma_client = chromadb.EphemeralClient(settings=Settings(anonymized_telemetry=False))
+        const_client = chromadb.EphemeralClient(settings=Settings(anonymized_telemetry=False))
     else:
-        chroma_client = chromadb.PersistentClient(path="./bankv2")
-    collection = chroma_client.get_or_create_collection(name="jerry_history")
+        const_client = chromadb.PersistentClient(path="./bankv2")
+    collection = const_client.get_or_create_collection(name="jerry_history")
     return collection
 
 memory_collection = init_chroma_and_inject_profiles()
@@ -136,14 +138,16 @@ class JerryAgentHarness:
         system_instruction = (
             "你是 Jerry 财务智能体系统【首席风控审计官】，代号“铁算盘”。\n"
             "我们要审计的商品是：【" + str(item_name) + "】。\n\n"
-            "【❗⚠️ 核心死命令 ⚠️】\n"
+            "【❗⚠️ 核心价格限制死命令 ⚠️】\n"
+            "当审计对象是可乐、雪碧、饮料、矿泉水、零食等单体快消品时，默认数量必须是【1瓶/1支/1个】！\n"
+            "如果网络行情返回的是一整箱（如24瓶270元）或大礼包价格，你必须在心里除以数量，折算成【单瓶单价】（例如 3.00 或 3.50）填入下面的 estimated_price 字段。绝对不允许将整箱、批发的几百元作为单瓶默认购买价输出！\n\n"
             "你必须且只能输出标准的 JSON 块，禁止包含 any JSON 之外的问候性、引言或多余寒暄。你的输出格式必须 be 以下两种之一：\n\n"
             "1. 如果需要继续追查搜索（必须是你认为目前全网行情线索匮乏时才使用）：\n"
             "{\"action\": \"Call_Web_Search\", \"action_input\": \"关键词\"}\n\n"
             "2. 如果情报足够，给出最终审计报告（核心内容）：\n"
             "{\n"
             "  \"action\": \"Final Answer\",\n"
-            "  \"action_input\": \"【建议购买/建议避坑/持币观望】\\n\\n【深度审计理由】：\\n（在这里请结合 Jerry 的月度生活费剩余、历史消费习惯、商品性价比、全网行情，给出极其详尽、深刻、温情地消费心理审计与规避建议。）\\n\\nPRICE_DATA: {\\\"item\\\": \\\"" + str(item_name) + "\\\", \\\"estimated_price\\\": 请填入你根据全网情报审计出的真实合理市场估值或二手价数字，不要带‘元’字，例如3500.00}\"\n"
+            "  \"action_input\": \"【建议购买/建议避坑/持币观望】\\n\\n【深度审计理由】：\\n（在这里请结合 Jerry 的月度生活费剩余、历史消费习惯、商品性价比、全网行情，给出极其详尽、深刻、温情地消费心理审计与规避建议。）\\n\\nPRICE_DATA: {\\\"item\\\": \\\"" + str(item_name) + "\\\", \\\"estimated_price\\\": 请填入你根据全网情报审计出的真实合理【单物品单价】数字，不要带‘元’字，例如3.50}\"\n"
             "}"
         )
         user_input_context = f"【历史档案】：\n{long_term_context}\n\n【治理缓存】：\n{memory_ctx}\n\n【财务画像】：\n- 剩余资金: {profile_data['current_surplus']} 元\n\n【初始情报】：\n{raw_info_text[:1200]}"
@@ -266,11 +270,7 @@ def run_fsm_scout_pipeline(query, status_widget):
 # 🎯 🌟【核心高能回调控制器】
 # =======================================================================
 def callback_execute_confirm():
-    """ 真正执行扣款的隔离回调 —— 运行完自动洗刷页面让分析消失 """
-    if st.session_state.get('SUBMIT_PROCESSING'):
-        return  # 防刷锁
-    st.session_state['SUBMIT_PROCESSING'] = True
-
+    """ 真正执行扣款的隔离回调 """
     if st.session_state.get('LAST_AUDIT'):
         audit_data = st.session_state['LAST_AUDIT']
         try:
@@ -285,6 +285,7 @@ def callback_execute_confirm():
             memory_collection.add(documents=[f"强行确认购买了关于'{audit_data['item']}'的商品。[已买入]"], ids=[f"pass_{int(time.time())}"])
             save_audit_log(st.session_state["active_query"], audit_data["display_answer"][:50])
             
+            # 📢 钉钉即时发送核销消息
             msg_content = (
                 f"### 🪙 Jerry财务智能体 · 账单自动核销支出回执\n\n"
                 f"--- \n\n"
@@ -299,24 +300,19 @@ def callback_execute_confirm():
         except Exception as async_err:
             print(f"后端执行异常: {async_err}")
             
-    # 🔥 核心清洗：还原锁状态并触发页面重绘更新资产看板
-    st.session_state["active_query"] = None
-    st.session_state['LAST_AUDIT'] = None
-    st.session_state['SUBMIT_PROCESSING'] = False
+    # 🌟 修复：保留数据让界面还在，只记录状态为“已完成决策”
+    st.session_state['ACTION_COMPLETED'] = True
     st.rerun()
 
 
 def callback_execute_cancel():
     """ 纯粹听从劝阻放弃购买的回调 """
-    if st.session_state.get('SUBMIT_PROCESSING'):
-        return  # 防刷锁
-    st.session_state['SUBMIT_PROCESSING'] = True
-
     if st.session_state.get('LAST_AUDIT'):
         audit_data = st.session_state['LAST_AUDIT']
         try:
             memory_collection.add(documents=[f"听从劝阻放弃购买关于'{audit_data['item']}'的商品。[已拦截]"], ids=[f"block_{int(time.time())}"])
             
+            # 📢 钉钉即时发送拦截消息
             msg_content = (
                 f"### 🙅‍♂️ Jerry财务智能体 · 冲动消费成功拦截回执\n\n"
                 f"--- \n\n"
@@ -331,10 +327,8 @@ def callback_execute_cancel():
         except Exception as err:
             print(f"拦截存证失败: {err}")
             
-    # 🔥 核心清洗并强制刷新
-    st.session_state["active_query"] = None
-    st.session_state['LAST_AUDIT'] = None
-    st.session_state['SUBMIT_PROCESSING'] = False
+    # 🌟 修复：保留数据让界面还在，只记录状态为“已完成决策”
+    st.session_state['ACTION_COMPLETED'] = True
     st.rerun()
 
 
@@ -357,6 +351,7 @@ with st.sidebar:
         st.session_state["active_query"] = None
         st.session_state["just_recorded"] = None
         st.session_state['SUBMIT_PROCESSING'] = False
+        st.session_state['ACTION_COMPLETED'] = False
         st.rerun()
 
     st.button("🧼 一键重置指纹数据库", type="secondary", width=250, on_click=super_clear_all_states, disabled=st.session_state['SUBMIT_PROCESSING'])
@@ -400,13 +395,12 @@ if st.session_state.get("just_recorded"):
     st.toast(st.session_state["just_recorded"], icon="🪙")
     st.session_state["just_recorded"] = None
 
-# 输入框激活（通过全局防并发锁控制禁用状态）
+# 🛠️ 修复：对话框永远不被禁用（除非当前正忙于后台 LLM 链路的计算推理）
 chat_query = st.chat_input("输入商品名称，开始资产风控审计...", key="user_chat_input_core_key", disabled=st.session_state['SUBMIT_PROCESSING'])
 
 # ==========================================================
 # 🚨 6. 核心高能控制器流程整合与修复
 # ==========================================================
-# 检查是否从 URL Query 参数中传递了参数
 if st.session_state['SUBMIT_PROCESSING'] and st.session_state["active_query"] is None:
     target_query = st.query_params.get("chat_query", None)
     if target_query:
@@ -418,8 +412,8 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
     st.session_state['SUBMIT_PROCESSING'] = True
     st.session_state["active_query"] = query_text
     st.session_state['LAST_AUDIT'] = None  # 强清旧账单缓存
+    st.session_state['ACTION_COMPLETED'] = False # 重置按钮点击判定
     
-    # 在当前刷新周期直接异步发送钉钉通知
     ask_msg_content = (
         f"### 🔍 Jerry财务智能体捕获新审计提问\n\n"
         f"--- \n\n"
@@ -429,7 +423,6 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
     )
     global_pure_async_notify(None, None, ask_msg_content)
     
-    # 顺接管线，直接原地执行风控审计管道，彻底消除无谓的 rerun 死循环
     with st.chat_message("assistant"):
         status = st.status("🛸 Jerry-Scout 正在通过 FSM 状态机进行多维调度...", expanded=True)
         try:
@@ -444,7 +437,6 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
                 
             status.update(label="🚀 FSM 流程闭合！情报与定向爬虫数据同步完毕！", state="complete", expanded=False)
             
-            # 精准解析模型的真实估价
             detected_price = 0.0
             if "PRICE_DATA:" in raw_answer:
                 try: 
@@ -459,7 +451,6 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
                 except Exception as p_err: 
                     print(f"⚠️ 价格精细化抽取未命中: {p_err}")
             
-            # 正则补漏提取
             if detected_price == 0.0:
                 found_numbers = re.findall(r'(\d+)\s*-\s*(\d+)\s*元', raw_answer)
                 if found_numbers:
@@ -468,12 +459,16 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
                     single_nums = re.findall(r'(\d+)\s*元', raw_answer)
                     if single_nums: detected_price = float(single_nums[0])
 
-            # 🛠️ 【核心逻辑纠偏】
-            if detected_price == 0.0:
-                if any(x in clean_keyword.lower() for x in ["可乐", "cola", "饮料", "水", "雪碧", "芬达"]):
+            # 🛠️ 【核心逻辑二次纠偏 - 深度解决可乐等饮料被扣除几百元的问题】
+            # 如果关键词包含可乐、饮料、水，且解析价格大于20元（基本是整箱价），直接暴力强制回切为单瓶默认价 3.0 元
+            is_beverage = any(x in clean_keyword.lower() for x in ["可乐", "cola", "饮料", "水", "雪碧", "芬达", "矿泉水"])
+            if is_beverage and detected_price > 20.0:
+                detected_price = 3.0
+            elif detected_price == 0.0:
+                if is_beverage:
                     detected_price = 3.0 
                 else:
-                    detected_price = 15.0  # 基础通用默认兜底价
+                    detected_price = 15.0  
                     
             st.session_state['LAST_AUDIT'] = {
                 "price": detected_price, 
@@ -491,7 +486,6 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
             st.session_state["active_query"] = None
             st.stop()
             
-    # 执行完分析后，恢复锁状态并刷新页面以展示静态面板
     st.session_state['SUBMIT_PROCESSING'] = False
     st.rerun()
 
@@ -553,14 +547,17 @@ if st.session_state['LAST_AUDIT'] and st.session_state["active_query"]:
         is_insufficient = dynamic_profile['current_surplus'] < audit_data['price']
         expected_surplus = round(dynamic_profile['current_surplus'] - audit_data['price'], 2)
         
+        # 🛠️ 修复：根据 ACTION_COMPLETED 状态动态禁用按钮
+        buttons_disabled = st.session_state['ACTION_COMPLETED']
+        
         with col1:
             if is_insufficient:
                 st.button(f"❌ 余额不足支付 ({audit_data['price']}元)", type="primary", use_container_width=True, disabled=True)
                 st.markdown(f"<p style='color:red;font-size:14px;margin-top:5px;'>⚠️ 缺口金额: {round(audit_data['price'] - dynamic_profile['current_surplus'], 2)} 元</p>", unsafe_allow_html=True)
             else:
-                st.button(f"🪙 确认记入账本 (扣减 {audit_data['price']}元)", type="primary", key="btn_confirm_deduct", use_container_width=True, on_click=callback_execute_confirm)
+                st.button(f"🪙 确认记入账本 (扣减 {audit_data['price']}元)", type="primary", key="btn_confirm_deduct", use_container_width=True, on_click=callback_execute_confirm, disabled=buttons_disabled)
                 st.info(f"💡 确认后预计卡内还剩：**{expected_surplus}** 元")
 
         with col2:
-            st.button(f"🙅‍♂️ 听从劝阻 (放弃购买)", type="secondary", key="btn_cancel_deduct", use_container_width=True, on_click=callback_execute_cancel)
+            st.button(f"🙅‍♂️ 听从劝阻 (放弃购买)", type="secondary", key="btn_cancel_deduct", use_container_width=True, on_click=callback_execute_cancel, disabled=buttons_disabled)
             st.success(f"💰 听劝后可完美保留流动资金：**{dynamic_profile['current_surplus']}** 元不变")
