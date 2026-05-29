@@ -288,7 +288,9 @@ def callback_execute_confirm():
             memory_collection.add(documents=[f"强行确认购买了关于'{audit_data['item']}'的商品。[已买入]"], ids=[f"pass_{int(time.time())}"])
             save_audit_log(st.session_state["active_query"], audit_data["display_answer"][:50])
             
-            # 📢 钉钉即时发送核销消息
+            # ==========================================================
+            # 📢 钉钉即时发送核销消息（原有消息通知）
+            # ==========================================================
             msg_content = (
                 f"### 🪙 Jerry财务智能体 · 账单自动核销支出回执\n\n"
                 f"--- \n\n"
@@ -299,6 +301,24 @@ def callback_execute_confirm():
                 f"» *Jerry财务智能体 铁算盘核销完毕*"
             )
             global_pure_async_notify(None, None, msg_content)
+            
+            # ==========================================================
+            # 🚀 【新增功能】扣钱成功后追加发送一条直观的钱款扣减流水账单通知
+            # ==========================================================
+            deduct_notice_content = (
+                f"### 💸 资产动态调整 · 实时扣款成功通知\n\n"
+                f"--- \n\n"
+                f"🔔 **通知类型**：账户资金减少\n\n"
+                f"➖ **扣款金额**：`-{audit_data['price']} 元`\n\n"
+                f"🛍️ **消费账目**：`{audit_data['item']}`\n\n"
+                f"💳 **当前卡内余额**：**{profile['current_surplus']} 元**\n\n"
+                f"🕒 **扣款时间**：`{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}`\n\n"
+                f"--- \n"
+                f"» *资产实时监控中 · 记账本已同步*"
+            )
+            global_pure_async_notify(None, None, deduct_notice_content)
+            # ==========================================================
+
             st.session_state["just_recorded"] = f"💰 资产扣减成功！顺利购入【{audit_data['item']}】，已支出 {audit_data['price']} 元。"
         except Exception as async_err:
             print(f"后端执行异常: {async_err}")
