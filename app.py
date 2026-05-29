@@ -187,7 +187,7 @@ class JerryAgentHarness:
                 raw_output = final_res.choices[0].message.content.strip()
                 
                 if raw_output.startswith("```"): 
-                    raw_output = raw_output.split("```")[1].replace("json", "", 1).strip()
+                    raw_output = raw_output.with_prefix("```")[1].replace("json", "", 1).strip()
                 json_match = re.search(r'\{.*\}', raw_output, re.DOTALL)
                 if json_match:
                     parsed_json = json.loads(json_match.group(0))
@@ -403,24 +403,23 @@ if st.session_state.get("just_recorded"):
 # 输入框激活（通过全局防并发锁控制禁用状态）
 chat_query = st.chat_input("输入商品名称，开始资产风控审计...", key="user_chat_input_core_key", disabled=st.session_state['SUBMIT_PROCESSING'])
 
-if chat_query and chat_query.strip():
-    # 强制加锁：防并发
-    st.session_state['SUBMIT_PROCESSING'] = True
-    st.rerun()  # 率先重跑更新锁定状态，防止连续输入触发
-
-# ✅ 新的安全写法
+# ==========================================================
+# 🚨 6. 核心高能控制器流程整合与修复
+# ==========================================================
+# 检查是否从 URL Query 参数中传递了参数
 if st.session_state['SUBMIT_PROCESSING'] and st.session_state["active_query"] is None:
-    # 新版 query_params 像字典一样直接 get，如果不存在就安全返回 None
     target_query = st.query_params.get("chat_query", None)
-    
-    # 如果 URL 里确实有带参数过来，直接喂给 active_query 触发消费审计
     if target_query:
         st.session_state["active_query"] = target_query
 
-# 回退机制：直接从表单截获输入并执行
-if chat_query and chat_query.strip() and st.session_state['SUBMIT_PROCESSING']:
+# 拦截 chat_input 的真实提交事件
+if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING']:
     query_text = chat_query.strip()
+    st.session_state['SUBMIT_PROCESSING'] = True
+    st.session_state["active_query"] = query_text
+    st.session_state['LAST_AUDIT'] = None  # 强清旧账单缓存
     
+    # 在当前刷新周期直接异步发送钉钉通知
     ask_msg_content = (
         f"### 🔍 Jerry财务智能体捕获新审计提问\n\n"
         f"--- \n\n"
@@ -429,10 +428,8 @@ if chat_query and chat_query.strip() and st.session_state['SUBMIT_PROCESSING']:
         f"🛸 *Scout 正在通过 FSM 状态机进行多维调度搜集情报...*"
     )
     global_pure_async_notify(None, None, ask_msg_content)
-
-    st.session_state["active_query"] = query_text
-    st.session_state['LAST_AUDIT'] = None  # 强清旧账单缓存
     
+    # 顺接管线，直接原地执行风控审计管道，彻底消除无谓的 rerun 死循环
     with st.chat_message("assistant"):
         status = st.status("🛸 Jerry-Scout 正在通过 FSM 状态机进行多维调度...", expanded=True)
         try:
@@ -472,8 +469,6 @@ if chat_query and chat_query.strip() and st.session_state['SUBMIT_PROCESSING']:
                     if single_nums: detected_price = float(single_nums[0])
 
             # 🛠️ 【核心逻辑纠偏】
-            # 去除了原先盲目将大额商品（>2000元）或额度不足商品直接强行重置为 15.0元/3.0元 的死循环逻辑。
-            # 保留了对饮料等快消品的智能纠偏能力。
             if detected_price == 0.0:
                 if any(x in clean_keyword.lower() for x in ["可乐", "cola", "饮料", "水", "雪碧", "芬达"]):
                     detected_price = 3.0 
@@ -496,12 +491,13 @@ if chat_query and chat_query.strip() and st.session_state['SUBMIT_PROCESSING']:
             st.session_state["active_query"] = None
             st.stop()
             
-    # 解锁流程并触发重绘静态前端
+    # 执行完分析后，恢复锁状态并刷新页面以展示静态面板
     st.session_state['SUBMIT_PROCESSING'] = False
     st.rerun()
 
+
 # ==========================================================
-# 🎨 6. 纯静态前端渲染区与交互遮罩管理
+# 🎨 7. 纯静态前端渲染区与交互遮罩管理
 # ==========================================================
 main_ui_container = st.empty()
 
@@ -560,7 +556,7 @@ if st.session_state['LAST_AUDIT'] and st.session_state["active_query"]:
         with col1:
             if is_insufficient:
                 st.button(f"❌ 余额不足支付 ({audit_data['price']}元)", type="primary", use_container_width=True, disabled=True)
-                st.caption(f"⚠️ 缺口金额: :red[{round(audit_data['price'] - dynamic_profile['current_surplus'], 2)} 元]")
+                st.markdown(f"<p style='color:red;font-size:14px;margin-top:5px;'>⚠️ 缺口金额: {round(audit_data['price'] - dynamic_profile['current_surplus'], 2)} 元</p>", unsafe_allow_html=True)
             else:
                 st.button(f"🪙 确认记入账本 (扣减 {audit_data['price']}元)", type="primary", key="btn_confirm_deduct", use_container_width=True, on_click=callback_execute_confirm)
                 st.info(f"💡 确认后预计卡内还剩：**{expected_surplus}** 元")
