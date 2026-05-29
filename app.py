@@ -181,8 +181,7 @@ class JerryAgentHarness:
                 raw_output = final_res.choices[0].message.content.strip()
                 
                 if raw_output.startswith("```"): 
-                    raw_output = raw_output.split("
-```")[1].replace("json", "", 1).strip()
+                    raw_output = raw_output.split("```")[1].replace("json", "", 1).strip()
                 json_match = re.search(r'\{.*\}', raw_output, re.DOTALL)
                 if json_match:
                     parsed_json = json.loads(json_match.group(0))
