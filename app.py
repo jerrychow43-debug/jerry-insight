@@ -408,12 +408,14 @@ if chat_query and chat_query.strip():
     st.session_state['SUBMIT_PROCESSING'] = True
     st.rerun()  # 率先重跑更新锁定状态，防止连续输入触发
 
-# 在脚本重新加载时检查是否捕捉到了待处理的 query
+# ✅ 新的安全写法
 if st.session_state['SUBMIT_PROCESSING'] and st.session_state["active_query"] is None:
-    # 这一步说明是刚才由 `chat_query` 触发重新加载进来的
-    target_query = st.experimental_get_query_params().get("chat_query", [None])[0] 
-    # 此处利用 Streamlit 渲染周期缓存，直接拿临时局部变量处理
-    pass
+    # 新版 query_params 像字典一样直接 get，如果不存在就安全返回 None
+    target_query = st.query_params.get("chat_query", None)
+    
+    # 如果 URL 里确实有带参数过来，直接喂给 active_query 触发消费审计
+    if target_query:
+        st.session_state["active_query"] = target_query
 
 # 回退机制：直接从表单截获输入并执行
 if chat_query and chat_query.strip() and st.session_state['SUBMIT_PROCESSING']:
