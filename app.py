@@ -151,8 +151,7 @@ class JerryAgentHarness:
                 raw_output = response.choices[0].message.content.strip()
                 
                 # 清洗大模型可能自带的 ```json 标记
-                if raw_output.startswith("
-```json"):
+                if raw_output.startswith("```json"):
                     raw_output = raw_output.replace("```json", "", 1).rstrip("```").strip()
                 elif raw_output.startswith("```"):
                     raw_output = raw_output.replace("
