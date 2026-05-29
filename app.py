@@ -45,8 +45,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # 🤖 【钉钉通道安全注入】
-# 💡 提示：如果钉钉报错 "errcode: 310000", 说明触发了钉钉安全拦截。请检查机器人后台是否开启了 "加签" 或 "IP白名单"。
-# 如果开启了加签，需要将密钥动态配置进去。这里确保消息中包含必须的关键字 "Jerry财务智能体"
 DINGTALK_WEBHOOK = "https://oapi.dingtalk.com/robot/send?access_token=2f4f18adb7a69d71e3faa1e90879d6987c75cbb16b6a7c10fe870b4e9a051c0c"
 
 def send_dingtalk_worker_sync(title, markdown_content):
@@ -71,7 +69,6 @@ def send_dingtalk_worker_sync(title, markdown_content):
         if res_json.get("errcode") == 0:
             st.toast("💥【钉钉推送成功】已顺利送达群聊！", icon="✅")
         else:
-            # 当返回 310000 时提示用户去钉钉后台检查安全设置
             if res_json.get("errcode") == 310000:
                 st.toast(f"🚨【钉钉安全拦截】: 关键词不匹配或未配置安全加签密钥！", icon="🔒")
             else:
@@ -81,15 +78,19 @@ def send_dingtalk_worker_sync(title, markdown_content):
         st.toast(f"⚠️ 钉钉网关网络异常: {e}", icon="📡")
         return {"errcode": -2, "errmsg": str(e)}
 
+if 'ASYNC_EXECUTOR' not in st.session_state:
+    st.session_state['ASYNC_EXECUTOR'] = ThreadPoolExecutor(max_workers=8)
+
 def global_pure_async_notify(ding_token, wx_token, content):
+    """ 异步推送核心：扔进线程池，杜绝因网络延迟导致的前端卡顿 """
     title = "资产动态调整"
-    return send_dingtalk_worker_sync(title, content)
+    if 'ASYNC_EXECUTOR' in st.session_state:
+        st.session_state['ASYNC_EXECUTOR'].submit(send_dingtalk_worker_sync, title, content)
+    else:
+        send_dingtalk_worker_sync(title, content)
 
 FILE_LOCK = threading.Lock()
 PROFILE_FILE = "jerry_profile.json"
-
-if 'ASYNC_EXECUTOR' not in st.session_state:
-    st.session_state['ASYNC_EXECUTOR'] = ThreadPoolExecutor(max_workers=8)
 
 @st.cache_resource
 def init_chroma_and_inject_profiles():
@@ -214,7 +215,7 @@ class JerryAgentHarness:
 
 
 # ==========================================================
-# 📊 4. FSM 状态机托管管道
+# 👑 4. FSM 状态机托管管道
 # ==========================================================
 def run_fsm_scout_pipeline(query, status_widget):
     fsm = JerryFSMAgent()
@@ -298,10 +299,11 @@ def callback_execute_confirm():
         except Exception as async_err:
             print(f"后端执行异常: {async_err}")
             
-    # 🔥 核心清洗：还原锁状态，防止重新跑整个脚本时输入框被锁死
+    # 🔥 核心清洗：还原锁状态并触发页面重绘更新资产看板
     st.session_state["active_query"] = None
     st.session_state['LAST_AUDIT'] = None
     st.session_state['SUBMIT_PROCESSING'] = False
+    st.rerun()
 
 
 def callback_execute_cancel():
@@ -329,10 +331,11 @@ def callback_execute_cancel():
         except Exception as err:
             print(f"拦截存证失败: {err}")
             
-    # 🔥 核心清洗
+    # 🔥 核心清洗并强制刷新
     st.session_state["active_query"] = None
     st.session_state['LAST_AUDIT'] = None
     st.session_state['SUBMIT_PROCESSING'] = False
+    st.rerun()
 
 
 # ==========================================================
@@ -397,38 +400,52 @@ if st.session_state.get("just_recorded"):
     st.toast(st.session_state["just_recorded"], icon="🪙")
     st.session_state["just_recorded"] = None
 
-# 🌟【修复逻辑1】：在这里，我们精准让大框的不可控拦截释放开
-chat_query = st.chat_input("输入商品名称，开始资产风控审计...", key="user_chat_input_core_key", disabled=False)
+# 输入框激活（通过全局防并发锁控制禁用状态）
+chat_query = st.chat_input("输入商品名称，开始资产风控审计...", key="user_chat_input_core_key", disabled=st.session_state['SUBMIT_PROCESSING'])
 
 if chat_query and chat_query.strip():
     # 强制加锁：防并发
     st.session_state['SUBMIT_PROCESSING'] = True
+    st.rerun()  # 率先重跑更新锁定状态，防止连续输入触发
+
+# 在脚本重新加载时检查是否捕捉到了待处理的 query
+if st.session_state['SUBMIT_PROCESSING'] and st.session_state["active_query"] is None:
+    # 这一步说明是刚才由 `chat_query` 触发重新加载进来的
+    target_query = st.experimental_get_query_params().get("chat_query", [None])[0] 
+    # 此处利用 Streamlit 渲染周期缓存，直接拿临时局部变量处理
+    pass
+
+# 回退机制：直接从表单截获输入并执行
+if chat_query and chat_query.strip() and st.session_state['SUBMIT_PROCESSING']:
+    query_text = chat_query.strip()
     
     ask_msg_content = (
         f"### 🔍 Jerry财务智能体捕获新审计提问\n\n"
         f"--- \n\n"
-        f"👤 **用户输入原始问题**：\"{chat_query.strip()}\"\n\n"
+        f"👤 **用户输入原始问题**：\"{query_text}\"\n\n"
         f"🕒 **触发时间**：`{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}`\n\n"
         f"🛸 *Scout 正在通过 FSM 状态机进行多维调度搜集情报...*"
     )
-    send_dingtalk_worker_sync("捕获新审计需求", ask_msg_content)
+    global_pure_async_notify(None, None, ask_msg_content)
 
-    st.session_state["active_query"] = chat_query.strip()
+    st.session_state["active_query"] = query_text
     st.session_state['LAST_AUDIT'] = None  # 强清旧账单缓存
     
     with st.chat_message("assistant"):
         status = st.status("🛸 Jerry-Scout 正在通过 FSM 状态机进行多维调度...", expanded=True)
         try:
-            raw_answer, clean_keyword, info_blocks, price_table_data, crawler_results, long_term_context = run_fsm_scout_pipeline(chat_query.strip(), status)
+            raw_answer, clean_keyword, info_blocks, price_table_data, crawler_results, long_term_context = run_fsm_scout_pipeline(query_text, status)
             
             if raw_answer == "INVALID_INTENT":
                 status.update(label="🚨 监测到非业务输入。", state="error", expanded=False)
                 st.error("请输入有效的业务商品进行审计. ")
                 st.session_state['SUBMIT_PROCESSING'] = False
+                st.session_state["active_query"] = None
                 st.stop()
                 
             status.update(label="🚀 FSM 流程闭合！情报与定向爬虫数据同步完毕！", state="complete", expanded=False)
             
+            # 精准解析模型的真实估价
             detected_price = 0.0
             if "PRICE_DATA:" in raw_answer:
                 try: 
@@ -443,7 +460,8 @@ if chat_query and chat_query.strip():
                 except Exception as p_err: 
                     print(f"⚠️ 价格精细化抽取未命中: {p_err}")
             
-            if detected_price == 0.0 or detected_price == 3.5:
+            # 正则补漏提取
+            if detected_price == 0.0:
                 found_numbers = re.findall(r'(\d+)\s*-\s*(\d+)\s*元', raw_answer)
                 if found_numbers:
                     detected_price = float(found_numbers[0][0])  
@@ -451,11 +469,14 @@ if chat_query and chat_query.strip():
                     single_nums = re.findall(r'(\d+)\s*元', raw_answer)
                     if single_nums: detected_price = float(single_nums[0])
 
-            if detected_price >= (dynamic_profile['current_surplus'] - 1) or detected_price > 2000:
+            # 🛠️ 【核心逻辑纠偏】
+            # 去除了原先盲目将大额商品（>2000元）或额度不足商品直接强行重置为 15.0元/3.0元 的死循环逻辑。
+            # 保留了对饮料等快消品的智能纠偏能力。
+            if detected_price == 0.0:
                 if any(x in clean_keyword.lower() for x in ["可乐", "cola", "饮料", "水", "雪碧", "芬达"]):
-                    detected_price = 3.0  
+                    detected_price = 3.0 
                 else:
-                    detected_price = 15.0 
+                    detected_price = 15.0  # 基础通用默认兜底价
                     
             st.session_state['LAST_AUDIT'] = {
                 "price": detected_price, 
@@ -470,9 +491,10 @@ if chat_query and chat_query.strip():
             status.update(label=f"❌ 流程运行异常: {str(e)}", state="error", expanded=False)
             st.error(f"引擎报错: {e}")
             st.session_state['SUBMIT_PROCESSING'] = False
+            st.session_state["active_query"] = None
             st.stop()
             
-    # 解锁流程
+    # 解锁流程并触发重绘静态前端
     st.session_state['SUBMIT_PROCESSING'] = False
     st.rerun()
 
@@ -506,7 +528,7 @@ if st.session_state['LAST_AUDIT'] and st.session_state["active_query"]:
 
             st.markdown("### 📌 Jerry-Scout 关联历史输入知识库线索")
             lt_ctx = audit_data["long_term_context"]
-            if lt_ctx and len(lt_ctx.strip()) > 10:
+            if lt_ctx and len(lt_ctx.strip()) > 10 and "暂无历史档案" not in lt_ctx:
                 st.info(f"🔍 铁算盘为你捞出了关于【{audit_data['item']}】的历史输入关联记录快照：\n\n{lt_ctx}")
             else:
                 st.caption(f"💡 历史拦截库中暂未匹配到针对“{audit_data['item']}”的历史指纹。已自动保存。")
@@ -519,7 +541,7 @@ if st.session_state['LAST_AUDIT'] and st.session_state["active_query"]:
                 for spider_item in audit_data["crawler_results"]:
                     parsed_data.append({"🛒 渠道平台": f"🔥 {spider_item['platform']}", "💰 实时报价与情报": spider_item['price_info'], "🔗 原始链接": spider_item['source']})
             if not parsed_data:
-                parsed_data = [{"🛒 渠道平台": "官方电商渠道", "💰 实时报价与情报": "全网均价约大盘浮动", "🔗 原始链接": "本地商超端"}]
+                parsed_data = [{"🛒 渠道平台": "官方电商渠道", "💰 实时报价与情报": f"全网均价约 {audit_data['price']} 元大盘浮动", "🔗 原始链接": "本地商超端"}]
                 
             st.dataframe(pd.DataFrame(parsed_data), hide_index=True)
 
