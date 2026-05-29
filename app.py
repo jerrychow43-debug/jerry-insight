@@ -25,6 +25,9 @@ if 'LAST_AUDIT' not in st.session_state:
     st.session_state['LAST_AUDIT'] = None
 if 'SUBMIT_PROCESSING' not in st.session_state:
     st.session_state['SUBMIT_PROCESSING'] = False
+# ✨ 【新增安全缓冲区】用于存放刚刚扣款成功的存证，防止界面坍塌消失
+if 'RECEIPT_DATA' not in st.session_state:
+    st.session_state['RECEIPT_DATA'] = None
 
 # =====================================================================
 # 🛠️ 2. 核心底层组件引入与环境配置对齐
@@ -288,6 +291,13 @@ def callback_confirm_deduct():
             )
             global_pure_async_notify(None, None, msg_content)
             
+            # ✨【防消失重构】：把收据临时存在会话中，用于支撑接下来的前端渲染，防止白屏消失
+            st.session_state['RECEIPT_DATA'] = {
+                "item": audit_data['item'],
+                "price": audit_data['price'],
+                "surplus": profile["current_surplus"]
+            }
+            
             # 状态硬洗刷
             st.session_state["active_query"] = None
             st.session_state['LAST_AUDIT'] = None
@@ -299,6 +309,7 @@ def callback_cancel_deduct():
     """放弃购买回调"""
     st.session_state["active_query"] = None
     st.session_state['LAST_AUDIT'] = None
+    st.session_state['RECEIPT_DATA'] = None # 清空收据
 
 
 # ==========================================================
@@ -320,12 +331,13 @@ with st.sidebar:
         st.session_state["active_query"] = None
         st.session_state["just_recorded"] = False
         st.session_state['SUBMIT_PROCESSING'] = False
+        st.session_state['RECEIPT_DATA'] = None
         st.rerun()
 
     st.button("🧼 一键重置指纹数据库", type="secondary", width=250, on_click=super_clear_all_states, disabled=st.session_state['SUBMIT_PROCESSING'])
     st.write("---")
 
-    st.subheader("📊 铁算盘·资产风控看板")
+    st.sidebar.subheader("📊 铁算盘·资产风控看板")
     try:
         all_mems = memory_collection.get()
         item_status_map = {}
@@ -343,11 +355,11 @@ with st.sidebar:
         blacklist = [k for k, v in item_status_map.items() if v == "BLACKLIST"]
         whitelist = [k for k, v in item_status_map.items() if v == "WHITELIST"]
         
-        with st.expander("🔴 被强制拦截的坑位", expanded=True):
+        with st.sidebar.expander("🔴 被强制拦截的坑位", expanded=True):
             if blacklist:
                 for item in blacklist[-5:]: st.markdown(f"❌ `{item}`")
             else: st.caption("暂无历史拦截记录")
-        with st.expander("🟢 已安全放行的好物", expanded=True):
+        with st.sidebar.expander("🟢 已安全放行的好物", expanded=True):
             if whitelist:
                 for item in whitelist[-5:]: st.markdown(f"✅ `{item}`")
             else: st.caption("暂无历史放行记录")
@@ -368,6 +380,7 @@ chat_query = st.chat_input("输入商品名称，开始资产风控审计...", k
 if chat_query and chat_query.strip():
     st.session_state["active_query"] = chat_query.strip()
     st.session_state['LAST_AUDIT'] = None  # 强清旧账单缓存
+    st.session_state['RECEIPT_DATA'] = None # 清空旧的扣款收据
     
     with st.chat_message("assistant"):
         status = st.status("🛸 Jerry-Scout 正在通过 FSM 状态机进行多维调度...", expanded=True)
@@ -488,3 +501,11 @@ if st.session_state['LAST_AUDIT']:
 
         with col2:
             st.button(f"🙅‍♂️ 听从劝阻 (放弃购买)", type="secondary", key="btn_cancel_deduct", use_container_width=True, on_click=callback_cancel_deduct)
+
+# ✨【新增渲染逻辑】：当 LAST_AUDIT 被回调清空后，如果发现有收据，就在原地渲染一个“扣款完成”的静态锁定面板，防止界面闪烁消失
+elif st.session_state['RECEIPT_DATA']:
+    receipt = st.session_state['RECEIPT_DATA']
+    with main_ui_container.container():
+        st.success(f"✅ **账单记入成功！** 已成功核销商品 `{receipt['item']}`，扣减金额 `{receipt['price']} 元`。卡内当前剩余流动资金：`{receipt['surplus']} 元`。")
+        # 放置一个清除按钮，点击后彻底重置，准备迎接下一次输入
+        st.button("🔄 开启下一轮风控审计", type="secondary", on_click=lambda: st.session_state.update({"RECEIPT_DATA": None}))
