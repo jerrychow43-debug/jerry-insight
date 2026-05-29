@@ -271,6 +271,9 @@ def run_fsm_scout_pipeline(query, status_widget):
 # =======================================================================
 def callback_execute_confirm():
     """ 真正执行扣款的隔离回调 """
+    # 💥 【重点修复】在回调进入的第1行瞬间将状态锁定，彻底杜绝短时间狂点造成的重复扣款
+    st.session_state['ACTION_COMPLETED'] = True
+    
     if st.session_state.get('LAST_AUDIT'):
         audit_data = st.session_state['LAST_AUDIT']
         try:
@@ -300,13 +303,14 @@ def callback_execute_confirm():
         except Exception as async_err:
             print(f"后端执行异常: {async_err}")
             
-    # 🌟 修复：保留数据让界面还在，只记录状态为“已完成决策”
-    st.session_state['ACTION_COMPLETED'] = True
     st.rerun()
 
 
 def callback_execute_cancel():
     """ 纯粹听从劝阻放弃购买的回调 """
+    # 💥 【重点修复】在回调进入的第1行瞬间将状态锁定，彻底杜绝短时间狂点
+    st.session_state['ACTION_COMPLETED'] = True
+    
     if st.session_state.get('LAST_AUDIT'):
         audit_data = st.session_state['LAST_AUDIT']
         try:
@@ -327,8 +331,6 @@ def callback_execute_cancel():
         except Exception as err:
             print(f"拦截存证失败: {err}")
             
-    # 🌟 修复：保留数据让界面还在，只记录状态为“已完成决策”
-    st.session_state['ACTION_COMPLETED'] = True
     st.rerun()
 
 
@@ -395,7 +397,7 @@ if st.session_state.get("just_recorded"):
     st.toast(st.session_state["just_recorded"], icon="🪙")
     st.session_state["just_recorded"] = None
 
-# 🛠️ 修复：对话框永远不被禁用（除非当前正忙于后台 LLM 链路的计算推理）
+# 对话框管理
 chat_query = st.chat_input("输入商品名称，开始资产风控审计...", key="user_chat_input_core_key", disabled=st.session_state['SUBMIT_PROCESSING'])
 
 # ==========================================================
@@ -460,7 +462,6 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
                     if single_nums: detected_price = float(single_nums[0])
 
             # 🛠️ 【核心逻辑二次纠偏 - 深度解决可乐等饮料被扣除几百元的问题】
-            # 如果关键词包含可乐、饮料、水，且解析价格大于20元（基本是整箱价），直接暴力强制回切为单瓶默认价 3.0 元
             is_beverage = any(x in clean_keyword.lower() for x in ["可乐", "cola", "饮料", "水", "雪碧", "芬达", "矿泉水"])
             if is_beverage and detected_price > 20.0:
                 detected_price = 3.0
@@ -547,7 +548,6 @@ if st.session_state['LAST_AUDIT'] and st.session_state["active_query"]:
         is_insufficient = dynamic_profile['current_surplus'] < audit_data['price']
         expected_surplus = round(dynamic_profile['current_surplus'] - audit_data['price'], 2)
         
-        # 🛠️ 修复：根据 ACTION_COMPLETED 状态动态禁用按钮
         buttons_disabled = st.session_state['ACTION_COMPLETED']
         
         with col1:
