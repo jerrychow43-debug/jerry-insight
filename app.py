@@ -114,8 +114,9 @@ openai_client = OpenAI(api_key=api_key, base_url=base_url)
 if 'GLOBAL_MEMORY_MANAGER' not in st.session_state: 
     st.session_state['GLOBAL_MEMORY_MANAGER'] = AdvancedMemoryManager(openai_client)
 
+
 # ==========================================================
-# 🌟 3. JerryAgentHarness 状态机引擎（🛠️ 已修复硬编码Bug）
+# 🌟 3. JerryAgentHarness 状态机引擎（🛠️ 彻底修复 ReAct 吞报告与套娃 Bug）
 # ==========================================================
 class JerryAgentHarness:
     def __init__(self, max_steps=4):
@@ -124,13 +125,12 @@ class JerryAgentHarness:
         self.max_steps = max_steps
 
     def run_harness(self, item_name, raw_info_text, profile_data, long_term_context, memory_ctx, status_widget=None):
-        # 💡 【修复核心 1】：提示词里的 3.5 修改为动态说明，要求模型根据真实爬虫/全网行情评估实际价格
         system_instruction = (
             "你是 Jerry-Insight 系统【首席风控审计官】，代号“铁算盘”。\n"
             "我们要审计的商品是：【" + str(item_name) + "】。\n\n"
             "【❗⚠️ 核心死命令 ⚠️】\n"
             "你必须且只能输出标准的 JSON 块，禁止包含 any JSON 之外的问候性、引言或多余寒暄。你的输出格式必须 be 以下两种之一：\n\n"
-            "1. 如果需要继续追查搜索：\n"
+            "1. 如果需要继续追查搜索（必须是你认为目前全网行情线索匮乏时才使用）：\n"
             "{\"action\": \"Call_Web_Search\", \"action_input\": \"关键词\"}\n\n"
             "2. 如果情报足够，给出最终审计报告（核心内容）：\n"
             "{\n"
@@ -149,25 +149,69 @@ class JerryAgentHarness:
                 if status_widget: status_widget.write(f"🧠 [Harness 状态机] 推理寻优中 ({step}/{self.max_steps})...")
                 response = self.client.chat.completions.create(model=self.model, messages=conversation_history, temperature=0.3)
                 raw_output = response.choices[0].message.content.strip()
+                
+                # 清洗大模型可能自带的 ```json 标记
+                if raw_output.startswith("
+```json"):
+                    raw_output = raw_output.replace("```json", "", 1).rstrip("```").strip()
+                elif raw_output.startswith("```"):
+                    raw_output = raw_output.replace("
+```", "", 1).rstrip("```").strip()
+
                 json_match = re.search(r'\{.*\}', raw_output, re.DOTALL)
                 clean_json_str = json_match.group(0) if json_match else raw_output
                 parsed_json = json.loads(clean_json_str)
+                
                 if parsed_json.get("action") == "Final Answer": 
                     return parsed_json.get("action_input")
                 elif parsed_json.get("action") == "Call_Web_Search":
-                    _, search_feedback_text, _ = web_search_pro(parsed_json.get("action_input"))
+                    search_kw = parsed_json.get("action_input")
+                    if status_widget: status_widget.write(f"🔍 触发多路追查，深度搜索: `{search_kw}`...")
+                    _, search_feedback_text, _ = web_search_pro(search_kw)
                     conversation_history.append({"role": "assistant", "content": raw_output})
-                    conversation_history.append({"role": "user", "content": f"【追查情报】：\n{search_feedback_text[:1200]}"})
-            except:
-                if step >= self.max_steps - 1: break
+                    conversation_history.append({"role": "user", "content": f"【追查情报反馈】：\n{search_feedback_text[:1200]}"})
+            except Exception as e:
+                print(f"Harness Step {step} 异常: {e}")
+                if step >= self.max_steps: break
                 
-        # 💡 【修复核心 2】：移除这里盲目返回 3.5 的拼接硬编码，改用正则兜底抽取。如果完全抽不到，设定为 0.0
+        # 🚨【核心修正点一】：如果跑完了所有 Step 仍然是个 Action（套娃失败摆烂了），强行拦截触发收敛总结
+        if "Final Answer" not in raw_output:
+            try:
+                if status_widget: status_widget.write("⚠️ 触发布局收敛机制，正在强行清算账目并生成终报...")
+                conversation_history.append({"role": "user", "content": "注意：时间到！请立刻停止任何 Call_Web_Search 动作。基于你目前掌握的所有情报，直接以 Final Answer 的 JSON 格式输出最终审计报告！"})
+                final_res = self.client.chat.completions.create(model=self.model, messages=conversation_history, temperature=0.2)
+                raw_output = final_res.choices[0].message.content.strip()
+                
+                if raw_output.startswith("```"): 
+                    raw_output = raw_output.split("
+```")[1].replace("json", "", 1).strip()
+                json_match = re.search(r'\{.*\}', raw_output, re.DOTALL)
+                if json_match:
+                    parsed_json = json.loads(json_match.group(0))
+                    if parsed_json.get("action") == "Final Answer":
+                        return parsed_json.get("action_input")
+            except Exception as final_err:
+                print(f"强行收敛失败: {final_err}")
+
+        # 🚨【核心修正点二】：彻底清洗脏数据。如果解析全垮了，手动剥离外部的 JSON 嵌套结构，防止把 action 传到前端
+        if 'action_input' in raw_output:
+            try:
+                json_match = re.search(r'\{.*\}', raw_output, re.DOTALL)
+                if json_match:
+                    extracted_text = json.loads(json_match.group(0)).get("action_input", raw_output)
+                    if "PRICE_DATA" in extracted_text:
+                        return extracted_text
+                    raw_output = extracted_text
+            except: pass
+
+        # 最后的终极价格安全兜底
         if "PRICE_DATA" in raw_output:
             return raw_output
         else:
-            found_nums = re.findall(r'(?:价格|标价|标价仅|约|位|为|扣减)\s*([0-9.]+)', raw_output)
+            found_nums = re.findall(r'(?:价格|标价|估值|均价|为|扣减)\s*([0-9.]+)', raw_output)
             fallback_price = float(found_nums[0]) if found_nums else 0.0
-            return f"📋报告\n{raw_output}\n\nPRICE_DATA: {{\"item\": \"{item_name}\", \"estimated_price\": {fallback_price}}}"
+            return f"📋 最终报告（强行收敛总结）\n\n{raw_output}\n\nPRICE_DATA: {{\"item\": \"{item_name}\", \"estimated_price\": {fallback_price}}}"
+
 
 # ==========================================================
 # 📊 4. FSM 状态机托管管道
@@ -297,7 +341,7 @@ if chat_query and chat_query.strip():
                 
             status.update(label="🚀 FSM 流程闭合！情报与定向爬虫数据同步完毕！", state="complete", expanded=False)
             
-            # 💡 【修复核心 3】：如果完全没有命中正则，兜底修改为从大模型生成的段落中寻找一个千元级大额数字（比如 3000-5000 里的 3000）
+            # 💡 【修复核心 3】：如果完全没有命中正则，兜底修改为从大模型生成的段落中寻找一个千元级大额数字
             detected_price = 0.0
             if "PRICE_DATA:" in raw_answer:
                 try: 
@@ -362,7 +406,7 @@ if st.session_state['LAST_AUDIT']:
                         text_snippet, source_url, rerank_score = blocks[idx]
                     else:
                         text_snippet = f"对齐商品 【{audit_data['item']}】 的多渠道行情分布与全网存证基准线线索。"
-                        source_url = f"https://search.smzdm.com/?s={audit_data['item']}"
+                        source_url = f"[https://search.smzdm.com/?s=](https://search.smzdm.com/?s=){audit_data['item']}"
                         rerank_score = 0.88 - (idx * 0.04)
                         
                     st.markdown(f"**情报源 [{idx+1}]** ｜ 匹配度分值: `{round(float(rerank_score), 4)}`")
@@ -439,4 +483,3 @@ if st.session_state['LAST_AUDIT'] and st.session_state['SUBMIT_PROCESSING']:
     st.session_state['SUBMIT_PROCESSING'] = False
     st.session_state["just_recorded"] = True
     st.rerun()
-
