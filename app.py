@@ -12,15 +12,15 @@ from openai import OpenAI
 from concurrent.futures import ThreadPoolExecutor
 
 # =====================================================================
-# 🔒 1. 全局配置与环境初始化
+# 🔒 1. 全局配置与环境初始化（标题已改为：Jerry 财务智能体 AI Agent）
 # =====================================================================
-st.set_page_config(page_title="Jerry-Insight Pro v3.5+", layout="wide", page_icon="🛡️")
+st.set_page_config(page_title="Jerry 财务智能体 AI Agent", layout="wide", page_icon="🛡️")
 
 # 核心状态机状态保持
 if "active_query" not in st.session_state:
     st.session_state["active_query"] = None
 if "just_recorded" not in st.session_state:
-    st.session_state["just_recorded"] = None  # 修改为可存入提示文本
+    st.session_state["just_recorded"] = None  
 if 'LAST_AUDIT' not in st.session_state:
     st.session_state['LAST_AUDIT'] = None
 if 'SUBMIT_PROCESSING' not in st.session_state:
@@ -53,12 +53,12 @@ def send_dingtalk_worker_sync(title, markdown_content):
         return {"errcode": -1, "errmsg": "No webhook url"}
 
     headers = {"Content-Type": "application/json;charset=utf-8"}
-    full_title = f"Jerry风控中心 - {title}"
+    full_title = f"Jerry财务智能体 - {title}"
     data = {
         "msgtype": "markdown",
         "markdown": {
             "title": full_title,
-            "text": f"## Jerry风控中心 · 实时回执\n\n{markdown_content}"
+            "text": f"## Jerry财务智能体 · 实时通知\n\n{markdown_content}"
         }
     }
     try:
@@ -125,7 +125,7 @@ class JerryAgentHarness:
 
     def run_harness(self, item_name, raw_info_text, profile_data, long_term_context, memory_ctx, status_widget=None):
         system_instruction = (
-            "你是 Jerry-Insight 系统【首席风控审计官】，代号“铁算盘”。\n"
+            "你是 Jerry 财务智能体系统【首席风控审计官】，代号“铁算盘”。\n"
             "我们要审计的商品是：【" + str(item_name) + "】。\n\n"
             "【❗⚠️ 核心死命令 ⚠️】\n"
             "你必须且只能输出标准的 JSON 块，禁止包含 any JSON 之外的问候性、引言或多余寒暄。你的输出格式必须 be 以下两种之一：\n\n"
@@ -254,10 +254,14 @@ def run_fsm_scout_pipeline(query, status_widget):
 
 
 # =======================================================================
-# 🎯 🌟【新增：核心高能回调控制器】—— 彻底解决错乱扣款与残留消失问题
+# 🎯 🌟【核心高能回调控制器】—— 解决多击防刷、消息推送、页面彻底洗刷消失
 # =======================================================================
 def callback_execute_confirm():
-    """ 真正执行扣款的隔离回调 """
+    """ 真正执行扣款的隔离回调 —— 运行完自动洗刷页面让分析消失 """
+    if st.session_state.get('SUBMIT_PROCESSING'):
+        return  # 防刷锁，防止快速重复点击
+    st.session_state['SUBMIT_PROCESSING'] = True
+
     if st.session_state.get('LAST_AUDIT'):
         audit_data = st.session_state['LAST_AUDIT']
         try:
@@ -273,41 +277,57 @@ def callback_execute_confirm():
             memory_collection.add(documents=[f"强行确认购买了关于'{audit_data['item']}'的商品。[已买入]"], ids=[f"pass_{int(time.time())}"])
             save_audit_log(st.session_state["active_query"], audit_data["display_answer"][:50])
             
-            # 发送消息
+            # 【钉钉消息 2】发送扣款决策核销消息
             msg_content = (
                 f"### 🪙 账单自动核销支出回执\n\n"
                 f"--- \n\n"
                 f"👉 **已购入好物**：`{audit_data['item']}`\n\n"
-                f"👉 **本次扣减金额**：`{audit_data['price']} 元`\n\n"
+                f"👉 **本次实际扣减**：`{audit_data['price']} 元`\n\n"
                 f"💰 **本月卡内当前剩余流动资金**：**{profile['current_surplus']} 元**\n\n"
                 f"--- \n"
-                f"» *Jerry风控中心 铁算盘自动审计点出证完毕*"
+                f"» *Jerry财务智能体 铁算盘核销完毕*"
             )
             global_pure_async_notify(None, None, msg_content)
             
-            # 核心洗刷：让整个卡片瞬间完全消失
+            # 让 Toast 显示提示
             st.session_state["just_recorded"] = f"💰 资产扣减成功！顺利购入【{audit_data['item']}】，已支出 {audit_data['price']} 元。"
         except Exception as async_err:
             print(f"后端执行异常: {async_err}")
             
-    # 全局重置状态机
+    # 🔥 核心状态清洗：清空激活问题与分析快照，让界面完美消失、回到初始状态
     st.session_state["active_query"] = None
     st.session_state['LAST_AUDIT'] = None
     st.session_state['SUBMIT_PROCESSING'] = False
     st.rerun()
 
 def callback_execute_cancel():
-    """ 纯粹听从劝阻放弃购买的回调 —— 绝对不扣一分钱 """
+    """ 纯粹听从劝阻放弃购买的回调 —— 绝对不扣一分钱，且自动洗刷页面 """
+    if st.session_state.get('SUBMIT_PROCESSING'):
+        return  # 防刷锁
+    st.session_state['SUBMIT_PROCESSING'] = True
+
     if st.session_state.get('LAST_AUDIT'):
         audit_data = st.session_state['LAST_AUDIT']
         try:
-            # 仅向向量知识库追加一条拦截存档，不操作任何钱包 json 文件
             memory_collection.add(documents=[f"听从劝阻放弃购买关于'{audit_data['item']}'的商品。[已拦截]"], ids=[f"block_{int(time.time())}"])
+            
+            # 【钉钉消息 3】发送放弃拦截消息
+            msg_content = (
+                f"### 🙅‍♂️ 冲动消费成功拦截回执\n\n"
+                f"--- \n\n"
+                f"👉 **放弃购买商品**：`{audit_data['item']}`\n\n"
+                f"💰 **完美省下**：`{audit_data['price']} 元`\n\n"
+                f"💡 *历史指纹库已追加该商品拦截指纹，守护资产成功！*\n\n"
+                f"--- \n"
+                f"» *Jerry财务智能体 拦截审计完毕*"
+            )
+            global_pure_async_notify(None, None, msg_content)
+            
             st.session_state["just_recorded"] = f"🙅‍♂️ 已听从劝阻！成功拦截对【{audit_data['item']}】的冲动消费，未扣除任何资产。"
         except Exception as err:
             print(f"拦截存证失败: {err}")
             
-    # 全局重置状态机，让卡片凭空消失
+    # 🔥 核心状态清洗：清空激活问题与分析快照，让界面完美消失、回到初始状态
     st.session_state["active_query"] = None
     st.session_state['LAST_AUDIT'] = None
     st.session_state['SUBMIT_PROCESSING'] = False
@@ -315,10 +335,10 @@ def callback_execute_cancel():
 
 
 # ==========================================================
-# 🎨 5. UI 渲染与侧边栏
+# 🎨 5. UI 渲染与侧边栏（标题全面升级为财务智能体 Agent）
 # ==========================================================
 with st.sidebar:
-    st.header("🕵️ Jerry-Insight 调度中心")
+    st.header("🕵️ Jerry 财务智能体调度中心")
     st.write("---")
     
     def super_clear_all_states():
@@ -367,11 +387,11 @@ with st.sidebar:
     except: 
         st.caption("看板数据同步中...")
 
-st.title("🛡️ Jerry-Insight Pro v3.5+")
+st.title("🛡️ Jerry 财务智能体 AI Agent")
 dynamic_profile = get_dynamic_profile()
 st.markdown(f"""> 💳 **Jerry 的当前实时资产面板** ｜ 本月卡里剩余流动资金: :orange[{dynamic_profile['current_surplus']} 元]""")
 
-# 状态核销提示（改用更加优美的 Toast 提醒，防止生硬的绿色大框打乱信息流）
+# 状态核销提示（Toast 提醒）
 if st.session_state.get("just_recorded"):
     st.toast(st.session_state["just_recorded"], icon="🪙")
     st.session_state["just_recorded"] = None
@@ -380,6 +400,16 @@ if st.session_state.get("just_recorded"):
 chat_query = st.chat_input("输入商品名称，开始资产风控审计...", key="user_chat_input_core_key", disabled=st.session_state['SUBMIT_PROCESSING'])
 
 if chat_query and chat_query.strip():
+    # 【钉钉消息 1】有人发起提问时，立刻推送一条钉钉动态
+    ask_msg_content = (
+        f"### 🔍 财务智能体捕获新审计提问\n\n"
+        f"--- \n\n"
+        f"👤 **用户输入原始问题**：\"{chat_query.strip()}\"\n\n"
+        f"🕒 **触发时间**：`{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}`\n\n"
+        f"🛸 *Scout 正在通过 FSM 状态机进行多维调度搜集情报...*"
+    )
+    send_dingtalk_worker_sync("捕获新审计需求", ask_msg_content)
+
     st.session_state["active_query"] = chat_query.strip()
     st.session_state['LAST_AUDIT'] = None  # 强清旧账单缓存
     
@@ -417,13 +447,12 @@ if chat_query and chat_query.strip():
                     single_nums = re.findall(r'(\d+)\s*元', raw_answer)
                     if single_nums: detected_price = float(single_nums[0])
 
-            # 🔥【终极强力纠错安全锁】：如果大模型又抽风，把“10000元剩余资产”提取成了价格
-            # 当商品包含可乐/饮料等低价常识词，而抓取的价格大于你的卡内大额资产，强制矫正为常识价
+            # 【终极强力纠错安全锁】
             if detected_price >= (dynamic_profile['current_surplus'] - 1) or detected_price > 2000:
                 if any(x in clean_keyword.lower() for x in ["可乐", "cola", "饮料", "水", "雪碧", "芬达"]):
-                    detected_price = 3.0  # 绝对防御：直接改回正常的可乐价！
+                    detected_price = 3.0  
                 else:
-                    detected_price = 15.0 # 其他小商品的极值兜底
+                    detected_price = 15.0 
                     
             st.session_state['LAST_AUDIT'] = {
                 "price": detected_price, 
@@ -489,7 +518,7 @@ if st.session_state['LAST_AUDIT'] and st.session_state["active_query"]:
                 
             st.dataframe(pd.DataFrame(parsed_data), hide_index=True)
 
-            st.markdown("### 🛡️ Jerry-Insight 深度审计报告")
+            st.markdown("### 🛡️ Jerry 财务智能体 深度审计报告")
             st.markdown(audit_data["display_answer"])
 
         # 🪙 底部资产核销与决策面板
@@ -499,13 +528,19 @@ if st.session_state['LAST_AUDIT'] and st.session_state["active_query"]:
         # 增加卡内余额检验
         is_insufficient = dynamic_profile['current_surplus'] < audit_data['price']
         
+        # 计算核销后的预期余额
+        expected_surplus = round(dynamic_profile['current_surplus'] - audit_data['price'], 2)
+        
         with col1:
             if is_insufficient:
                 st.button(f"❌ 余额不足支付 ({audit_data['price']}元)", type="primary", use_container_width=True, disabled=True)
+                st.caption(f"⚠️ 缺口金额: :red[{round(audit_data['price'] - dynamic_profile['current_surplus'], 2)} 元]")
             else:
-                # 🎯【核心修复】：绑定独立扣款逻辑回调函数，点按瞬间洗刷页面
-                st.button(f"🪙 确认记入账本 (扣减 {audit_data['price']}元)", type="primary", key="btn_confirm_deduct", use_container_width=True, on_click=callback_execute_confirm)
+                # 🎯【核心绑定】：绑定带锁的独立扣款逻辑回调函数，点按瞬间洗刷页面
+                st.button(f"🪙 确认记入账本 (扣减 {audit_data['price']}元)", type="primary", key="btn_confirm_deduct", use_container_width=True, on_click=callback_execute_confirm, disabled=st.session_state['SUBMIT_PROCESSING'])
+                st.info(f"💡 确认后预计卡内还剩：**{expected_surplus}** 元")
 
         with col2:
-            # 🎯【核心修复】：绑定独立放弃逻辑回调函数，点按绝对不扣钱并洗刷页面
-            st.button(f"🙅‍♂️ 听从劝阻 (放弃购买)", type="secondary", key="btn_cancel_deduct", use_container_width=True, on_click=callback_execute_cancel)
+            # 🎯【核心绑定】：绑定带锁的独立放弃逻辑回调函数，点按绝对不扣钱并洗刷页面
+            st.button(f"🙅‍♂️ 听从劝阻 (放弃购买)", type="secondary", key="btn_cancel_deduct", use_container_width=True, on_click=callback_execute_cancel, disabled=st.session_state['SUBMIT_PROCESSING'])
+            st.success(f"💰 听劝后可完美保留流动资金：**{dynamic_profile['current_surplus']}** 元不变")
