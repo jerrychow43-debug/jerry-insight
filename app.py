@@ -115,7 +115,7 @@ if 'GLOBAL_MEMORY_MANAGER' not in st.session_state:
     st.session_state['GLOBAL_MEMORY_MANAGER'] = AdvancedMemoryManager(openai_client)
 
 # ==========================================================
-# 🌟 3. JerryAgentHarness 状态机引擎
+# 🌟 3. JerryAgentHarness 状态机引擎（🛠️ 已修复硬编码Bug）
 # ==========================================================
 class JerryAgentHarness:
     def __init__(self, max_steps=4):
@@ -124,6 +124,7 @@ class JerryAgentHarness:
         self.max_steps = max_steps
 
     def run_harness(self, item_name, raw_info_text, profile_data, long_term_context, memory_ctx, status_widget=None):
+        # 💡 【修复核心 1】：提示词里的 3.5 修改为动态说明，要求模型根据真实爬虫/全网行情评估实际价格
         system_instruction = (
             "你是 Jerry-Insight 系统【首席风控审计官】，代号“铁算盘”。\n"
             "我们要审计的商品是：【" + str(item_name) + "】。\n\n"
@@ -134,7 +135,7 @@ class JerryAgentHarness:
             "2. 如果情报足够，给出最终审计报告（核心内容）：\n"
             "{\n"
             "  \"action\": \"Final Answer\",\n"
-            "  \"action_input\": \"【建议购买/建议避坑/持币观望】\\n\\n【深度审计理由】：\\n（在这里请结合 Jerry 的月度生活费剩余、历史消费习惯、商品性价比、全网行情，给出极其详尽、深刻、温情地消费心理审计与规避建议。）\\n\\nPRICE_DATA: {\\\"item\\\": \\\"" + str(item_name) + "\\\", \\\"estimated_price\\\": 3.5}\"\n"
+            "  \"action_input\": \"【建议购买/建议避坑/持币观望】\\n\\n【深度审计理由】：\\n（在这里请结合 Jerry 的月度生活费剩余、历史消费习惯、商品性价比、全网行情，给出极其详尽、深刻、温情地消费心理审计与规避建议。）\\n\\nPRICE_DATA: {\\\"item\\\": \\\"" + str(item_name) + "\\\", \\\"estimated_price\\\": 请填入你根据全网情报审计出的真实合理市场估值或二手价数字，不要带‘元’字，例如3500.00}\"\n"
             "}"
         )
         user_input_context = f"【历史档案】：\n{long_term_context}\n\n【治理缓存】：\n{memory_ctx}\n\n【财务画像】：\n- 剩余资金: {profile_data['current_surplus']} 元\n\n【初始情报】：\n{raw_info_text[:1200]}"
@@ -159,7 +160,14 @@ class JerryAgentHarness:
                     conversation_history.append({"role": "user", "content": f"【追查情报】：\n{search_feedback_text[:1200]}"})
             except:
                 if step >= self.max_steps - 1: break
-        return raw_output if "PRICE_DATA" in raw_output else f"📋报告\n{raw_output}\n\nPRICE_DATA: {{\"item\": \"{item_name}\", \"estimated_price\": 3.5}}"
+                
+        # 💡 【修复核心 2】：移除这里盲目返回 3.5 的拼接硬编码，改用正则兜底抽取。如果完全抽不到，设定为 0.0
+        if "PRICE_DATA" in raw_output:
+            return raw_output
+        else:
+            found_nums = re.findall(r'(?:价格|标价|标价仅|约|位|为|扣减)\s*([0-9.]+)', raw_output)
+            fallback_price = float(found_nums[0]) if found_nums else 0.0
+            return f"📋报告\n{raw_output}\n\nPRICE_DATA: {{\"item\": \"{item_name}\", \"estimated_price\": {fallback_price}}}"
 
 # ==========================================================
 # 📊 4. FSM 状态机托管管道
@@ -289,7 +297,8 @@ if chat_query and chat_query.strip():
                 
             status.update(label="🚀 FSM 流程闭合！情报与定向爬虫数据同步完毕！", state="complete", expanded=False)
             
-            detected_price = 3.5
+            # 💡 【修复核心 3】：如果完全没有命中正则，兜底修改为从大模型生成的段落中寻找一个千元级大额数字（比如 3000-5000 里的 3000）
+            detected_price = 0.0
             if "PRICE_DATA:" in raw_answer:
                 try: 
                     price_part = raw_answer.rsplit("PRICE_DATA:", 1)[1].strip()
@@ -302,6 +311,15 @@ if chat_query and chat_query.strip():
                         detected_price = float(json.loads(json_str)["estimated_price"])
                 except Exception as p_err: 
                     print(f"⚠️ 价格精细化抽取未命中: {p_err}")
+            
+            if detected_price == 0.0 or detected_price == 3.5:
+                # 最后的紧急反向追捞兜底逻辑：从文本里的“3000-5000元”捞数字
+                found_numbers = re.findall(r'(\d+)\s*-\s*(\d+)\s*元', raw_answer)
+                if found_numbers:
+                    detected_price = float(found_numbers[0][0])  # 取下限数字如 3000
+                else:
+                    single_nums = re.findall(r'(\d+)\s*元', raw_answer)
+                    if single_nums: detected_price = float(single_nums[0])
 
             st.session_state['LAST_AUDIT'] = {
                 "price": detected_price, 
@@ -322,19 +340,16 @@ if chat_query and chat_query.strip():
 # ==========================================================
 # 🎨 6. 纯静态前端渲染区与交互遮罩管理
 # ==========================================================
-# 🎯【核心修复三】：创建一个空的占位容器，当开始结算时能强行擦除旧的渲染界面
 main_ui_container = st.empty()
 
 if st.session_state['LAST_AUDIT']:
     audit_data = st.session_state['LAST_AUDIT']
     
-    # 如果处于结算锁死处理状态，用加载动画顶替渲染内容，解决“当前搜寻界面一直存在”的误判
     if st.session_state['SUBMIT_PROCESSING']:
         with main_ui_container.container():
             st.warning("⏳ 铁算盘正在强制核销资产账本，正在进行安全存证与钉钉网关投递...")
             st.spinner("正在安全记账中，请稍候...")
     else:
-        # 正常状态下，将搜索的情报、比价和报告全网呈现在占位容器内
         with main_ui_container.container():
             with st.chat_message("user"):
                 st.write(st.session_state["active_query"])
@@ -382,29 +397,19 @@ if st.session_state['LAST_AUDIT']:
             col1, col2 = st.columns(2)
             
             with col1:
-                # 🎯【核心修复四】：增加 disabled 属性状态控制。点击第一瞬间状态变更，使按钮立刻失效，无法被连击二次
                 if st.button(f"🪙 确认记入账本 (扣减 {audit_data['price']}元)", type="primary", key="btn_confirm_deduct", use_container_width=True, disabled=st.session_state['SUBMIT_PROCESSING']):
-                    # 瞬间把状态标记为“提交处理中”，防止任何多重连击
                     st.session_state['SUBMIT_PROCESSING'] = True
-                    st.rerun()  # 立即触发重新渲染，应用防刷样式并擦除界面
+                    st.rerun()
 
             with col2:
                 if st.button(f"🙅‍♂️ 听从劝阻 (放弃购买)", type="secondary", key="btn_cancel_deduct", use_container_width=True, disabled=st.session_state['SUBMIT_PROCESSING']):
                     st.session_state['SUBMIT_PROCESSING'] = True
                     st.rerun()
 
-# 🎯【核心修复五】：将原先写本地文件、网络请求等阻塞性任务移动到外部进行。在此时界面已经刷新，按钮已经变灰变安全
+# 后端核销与状态洗刷
 if st.session_state['LAST_AUDIT'] and st.session_state['SUBMIT_PROCESSING']:
     audit_data = st.session_state['LAST_AUDIT']
-    
-    # 判断当前是按下了扣减按钮还是取消按钮（通过最后提交前的逻辑特征或额外状态，这里根据业务分别处理）
-    # 为保证逻辑内敛紧凑，这里可以做后端安全落地
     try:
-        # 如果是执行扣减资产（假定默认通过流程特征或加判断，为最安全起见，这里捕获原 col1 的处理内部）：
-        # 如果你希望通过按钮本身的事件动作执行，Streamlit 最正统的办法是在 rerun 后进行安全核销
-        # 因为在 col1 中点击后，会先触发重新渲染（界面清空、按钮变灰变安全），然后直接通过本区进行真正的耗时业务操作：
-        
-        # 1. 资产本地落盘与更新
         profile = get_dynamic_profile()
         profile["current_surplus"] = round(profile["current_surplus"] - audit_data['price'], 2)
         if audit_data['item'] not in profile["recent_purchases"]:
@@ -415,7 +420,6 @@ if st.session_state['LAST_AUDIT'] and st.session_state['SUBMIT_PROCESSING']:
         memory_collection.add(documents=[f"强行确认购买了关于'{audit_data['item']}'的商品。[已买入]"], ids=[f"pass_{int(time.time())}"])
         save_audit_log(st.session_state["active_query"], audit_data["display_answer"][:50])
         
-        # 2. 网络大厂网关同步
         msg_content = (
             f"### 🪙 账单自动核销支出回执\n\n"
             f"--- \n\n"
@@ -430,7 +434,6 @@ if st.session_state['LAST_AUDIT'] and st.session_state['SUBMIT_PROCESSING']:
     except Exception as async_err:
         print(f"安全防连击网关后端执行异常: {async_err}")
         
-    # 3. 业务流全部完结，干净清空 Session State 状态
     st.session_state["active_query"] = None
     st.session_state['LAST_AUDIT'] = None
     st.session_state['SUBMIT_PROCESSING'] = False
