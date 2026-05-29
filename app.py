@@ -20,14 +20,11 @@ st.set_page_config(page_title="Jerry-Insight Pro v3.5+", layout="wide", page_ico
 if "active_query" not in st.session_state:
     st.session_state["active_query"] = None
 if "just_recorded" not in st.session_state:
-    st.session_state["just_recorded"] = False
+    st.session_state["just_recorded"] = None  # 修改为存储提示文本或 None
 if 'LAST_AUDIT' not in st.session_state:
     st.session_state['LAST_AUDIT'] = None
 if 'SUBMIT_PROCESSING' not in st.session_state:
     st.session_state['SUBMIT_PROCESSING'] = False
-# ✨ 【新增安全缓冲区】用于存放刚刚扣款成功的存证，防止界面坍塌消失
-if 'RECEIPT_DATA' not in st.session_state:
-    st.session_state['RECEIPT_DATA'] = None
 
 # =====================================================================
 # 🛠️ 2. 核心底层组件引入与环境配置对齐
@@ -256,30 +253,30 @@ def run_fsm_scout_pipeline(query, status_widget):
     return raw_answer, clean_keyword, info_blocks, price_table_data, crawler_results, long_term_context
 
 
-# ==========================================================
-# 🎯 🌟【核心重构区一】：彻底解决重复扣款的回调函数机制 🌟
-# ==========================================================
+# =======================================================================
+# 🎯 🌟【核心重构区】：点击后状态瞬间硬洗刷，整个审计面板直接抹去消失 🌟
+# =======================================================================
 def callback_confirm_deduct():
-    """将所有导致记账变更、写文件的敏感操作全部收回单次点击事件回调中，彻底消除时序竞争"""
+    """核销扣款回调：执行完写数据操作后，将所有展现控制变量归零，迫使界面全消失"""
     if st.session_state['LAST_AUDIT']:
         audit_data = st.session_state['LAST_AUDIT']
         try:
             profile = get_dynamic_profile()
             
-            # 执行核心扣减
+            # 1. 执行核心扣减
             profile["current_surplus"] = round(profile["current_surplus"] - audit_data['price'], 2)
             if audit_data['item'] not in profile["recent_purchases"]:
                 profile["recent_purchases"].append(audit_data['item'])
                 
-            # 瞬间落盘 JSON
+            # 2. 瞬间落盘 JSON
             with open(PROFILE_FILE, "w", encoding="utf-8") as f: 
                 json.dump(profile, f, ensure_ascii=False, indent=4)
             
-            # 同步写向量库与 SQL
+            # 3. 同步写向量库与 SQL
             memory_collection.add(documents=[f"强行确认购买了关于'{audit_data['item']}'的商品。[已买入]"], ids=[f"pass_{int(time.time())}"])
             save_audit_log(st.session_state["active_query"], audit_data["display_answer"][:50])
             
-            # 发送消息通道
+            # 4. 发送消息通道
             msg_content = (
                 f"### 🪙 账单自动核销支出回执\n\n"
                 f"--- \n\n"
@@ -291,25 +288,21 @@ def callback_confirm_deduct():
             )
             global_pure_async_notify(None, None, msg_content)
             
-            # ✨【防消失重构】：把收据临时存在会话中，用于支撑接下来的前端渲染，防止白屏消失
-            st.session_state['RECEIPT_DATA'] = {
-                "item": audit_data['item'],
-                "price": audit_data['price'],
-                "surplus": profile["current_surplus"]
-            }
+            # 5. 🔥【核心改动】：不留任何前台缓存收据，设置一个临时轻量气泡语
+            st.session_state["just_recorded"] = f"✅ 账单已记入！成功扣减 {audit_data['price']} 元，卡内剩余 {profile['current_surplus']} 元。"
             
-            # 状态硬洗刷
+            # 6. 🔥【清空状态】：切断所有会导致下方渲染块工作的条件
             st.session_state["active_query"] = None
             st.session_state['LAST_AUDIT'] = None
-            st.session_state["just_recorded"] = True
+            
         except Exception as err:
             print(f"回调记账安全拦截网关执行异常: {err}")
             
 def callback_cancel_deduct():
-    """放弃购买回调"""
+    """放弃购买回调：同样触发无痕清空状态"""
+    st.session_state["just_recorded"] = "🙅‍♂️ 已听从劝阻放弃购买，未扣除任何流动资金。"
     st.session_state["active_query"] = None
     st.session_state['LAST_AUDIT'] = None
-    st.session_state['RECEIPT_DATA'] = None # 清空收据
 
 
 # ==========================================================
@@ -329,9 +322,8 @@ with st.sidebar:
             except: pass
         st.session_state['LAST_AUDIT'] = None
         st.session_state["active_query"] = None
-        st.session_state["just_recorded"] = False
+        st.session_state["just_recorded"] = None
         st.session_state['SUBMIT_PROCESSING'] = False
-        st.session_state['RECEIPT_DATA'] = None
         st.rerun()
 
     st.button("🧼 一键重置指纹数据库", type="secondary", width=250, on_click=super_clear_all_states, disabled=st.session_state['SUBMIT_PROCESSING'])
@@ -370,17 +362,16 @@ st.title("🛡️ Jerry-Insight Pro v3.5+")
 dynamic_profile = get_dynamic_profile()
 st.markdown(f"""> 💳 **Jerry 的当前实时资产面板** ｜ 本月卡里剩余流动资金: :orange[{dynamic_profile['current_surplus']} 元]""")
 
-# 状态核销提示（若刚发生落盘）
-if st.session_state.get("just_recorded", False):
-    st.success("💰 资产变更指令强制落地！数字已完全对齐更新！")
-    st.session_state["just_recorded"] = False
+# ✨【轻量气泡闪播机制】：如果发生扣款或放弃，在顶部弹出一个会自动隐形消失的小 Toast 提示，绝不赖在页面上不走
+if st.session_state.get("just_recorded"):
+    st.toast(st.session_state["just_recorded"], icon="🪙")
+    st.session_state["just_recorded"] = None  # 播完一次立刻焚毁状态
 
 chat_query = st.chat_input("输入商品名称，开始资产风控审计...", key="user_chat_input_core_key", disabled=st.session_state['SUBMIT_PROCESSING'])
 
 if chat_query and chat_query.strip():
     st.session_state["active_query"] = chat_query.strip()
     st.session_state['LAST_AUDIT'] = None  # 强清旧账单缓存
-    st.session_state['RECEIPT_DATA'] = None # 清空旧的扣款收据
     
     with st.chat_message("assistant"):
         status = st.status("🛸 Jerry-Scout 正在通过 FSM 状态机进行多维调度...", expanded=True)
@@ -437,6 +428,7 @@ if chat_query and chat_query.strip():
 # ==========================================================
 main_ui_container = st.empty()
 
+# 🛡️ 只有 LAST_AUDIT 存在时，才进行整套长界面的构建和展示
 if st.session_state['LAST_AUDIT']:
     audit_data = st.session_state['LAST_AUDIT']
     
@@ -486,26 +478,15 @@ if st.session_state['LAST_AUDIT']:
         st.write("---")
         col1, col2 = st.columns(2)
         
-        # 🚨 💼【核心重构区二】：引入前端防穿仓安全锁逻辑
         current_available_surplus = dynamic_profile.get('current_surplus', 0.0)
         is_insufficient = current_available_surplus < audit_data['price']
         
         with col1:
             if is_insufficient:
-                # 账户透支风险拦截：强行将扣款按钮锁定变灰
                 st.button(f"❌ 余额不足支付 ({audit_data['price']}元)", type="primary", key="btn_confirm_deduct", use_container_width=True, disabled=True)
                 st.caption(f"⚠️ 核心支付级风控锁触发：卡内当前剩余流动资金仅 {current_available_surplus} 元，无法核销本次价值 {audit_data['price']} 元的商品。请先重置数据库！")
             else:
-                # 绑定回调函数：防多重刷单、刷点击
                 st.button(f"🪙 确认记入账本 (扣减 {audit_data['price']}元)", type="primary", key="btn_confirm_deduct", use_container_width=True, on_click=callback_confirm_deduct)
 
         with col2:
             st.button(f"🙅‍♂️ 听从劝阻 (放弃购买)", type="secondary", key="btn_cancel_deduct", use_container_width=True, on_click=callback_cancel_deduct)
-
-# ✨【新增渲染逻辑】：当 LAST_AUDIT 被回调清空后，如果发现有收据，就在原地渲染一个“扣款完成”的静态锁定面板，防止界面闪烁消失
-elif st.session_state['RECEIPT_DATA']:
-    receipt = st.session_state['RECEIPT_DATA']
-    with main_ui_container.container():
-        st.success(f"✅ **账单记入成功！** 已成功核销商品 `{receipt['item']}`，扣减金额 `{receipt['price']} 元`。卡内当前剩余流动资金：`{receipt['surplus']} 元`。")
-        # 放置一个清除按钮，点击后彻底重置，准备迎接下一次输入
-        st.button("🔄 开启下一轮风控审计", type="secondary", on_click=lambda: st.session_state.update({"RECEIPT_DATA": None}))
