@@ -56,13 +56,13 @@ def send_dingtalk_worker_sync(title, markdown_content):
         return {"errcode": -1, "errmsg": "No webhook url"}
 
     headers = {"Content-Type": "application/json;charset=utf-8"}
-    full_title = f"Jerry财务智能体 - {title}"
+    full_title = f"省钱智探agent - {title}"
     
     data = {
         "msgtype": "markdown",
         "markdown": {
             "title": full_title,
-            "text": f"## Jerry财务智能体 · 实时通知\n\n**【安全审计定位】**: Jerry财务智能体\n\n{markdown_content}"
+            "text": f"## 省钱智探agent · 实时通知\n\n**【安全审计定位】**: 省钱智探agent\n\n{markdown_content}"
         }
     }
     try:
@@ -292,13 +292,13 @@ def callback_execute_confirm():
             # 📢 钉钉即时发送核销消息（原有消息通知）
             # ==========================================================
             msg_content = (
-                f"### 🪙 Jerry财务智能体 · 账单自动核销支出回执\n\n"
+                f"### 🪙 省钱智探agent · 账单自动核销支出回执\n\n"
                 f"--- \n\n"
                 f"👉 **已购入好物**：`{audit_data['item']}`\n\n"
                 f"👉 **本次实际扣减**：`{audit_data['price']} 元`\n\n"
                 f"💰 **本月卡内当前剩余流动资金**：**{profile['current_surplus']} 元**\n\n"
                 f"--- \n"
-                f"» *Jerry财务智能体 铁算盘核销完毕*"
+                f"» *省钱智探agent 铁算盘核销完毕*"
             )
             global_pure_async_notify(None, None, msg_content)
             
@@ -342,13 +342,13 @@ def callback_execute_cancel():
             
             # 📢 钉钉即时发送拦截消息
             msg_content = (
-                f"### 🙅‍♂️ Jerry财务智能体 · 冲动消费成功拦截回执\n\n"
+                f"### 🙅‍♂️ 省钱智探agent · 冲动消费成功拦截回执\n\n"
                 f"--- \n\n"
                 f"👉 **放弃购买商品**：`{audit_data['item']}`\n\n"
                 f"💰 **完美省下**：`{audit_data['price']} 元`\n\n"
                 f"💡 *历史指纹库已追加该商品拦截指纹，守护资产成功！*\n\n"
                 f"--- \n"
-                f"» *Jerry财务智能体 拦截审计完毕*"
+                f"» *省钱智探agent 拦截审计完毕*"
             )
             global_pure_async_notify(None, None, msg_content)
             st.session_state["just_recorded"] = f"🙅‍♂️ 已听从劝阻！成功拦截对【{audit_data['item']}】的冲动消费，未扣除任何资产。"
@@ -441,7 +441,7 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
     st.session_state['ACTION_COMPLETED'] = False # 重置按钮点击判定
     
     ask_msg_content = (
-        f"### 🔍 Jerry财务智能体捕获新审计提问\n\n"
+        f"### 🔍 省钱智探agent捕获新审计提问\n\n"
         f"--- \n\n"
         f"👤 **用户输入原始问题**：\"{query_text}\"\n\n"
         f"🕒 **触发时间**：`{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}`\n\n"
