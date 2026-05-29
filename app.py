@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 # =====================================================================
 # 🔒 1. 全局配置与环境初始化
 # =====================================================================
-st.set_page_config(page_title="Jerry 财务智能体 AI Agent", layout="wide", page_icon="🛡️")
+st.set_page_config(page_title="省钱智探agent", layout="wide", page_icon="🛡️")
 
 # 核心状态机状态保持
 if "active_query" not in st.session_state:
@@ -362,7 +362,7 @@ def callback_execute_cancel():
 # 🎨 5. UI 渲染与侧边栏
 # ==========================================================
 with st.sidebar:
-    st.header("🕵️ Jerry 财务智能体调度中心")
+    st.header("🕵️智能体调度中心")
     st.write("---")
     
     def super_clear_all_states():
