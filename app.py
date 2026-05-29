@@ -319,6 +319,10 @@ def callback_execute_confirm():
             global_pure_async_notify(None, None, deduct_notice_content)
             # ==========================================================
 
+            # 💡【核心修正】强行给 CPU 和网络异步线程留出 0.2 秒的切换和出网缓冲时间
+            # 彻底防止因下方的 st.rerun() 瞬间重置导致子线程网络连接被强行掐断
+            time.sleep(0.2)
+
             st.session_state["just_recorded"] = f"💰 资产扣减成功！顺利购入【{audit_data['item']}】，已支出 {audit_data['price']} 元。"
         except Exception as async_err:
             print(f"后端执行异常: {async_err}")
