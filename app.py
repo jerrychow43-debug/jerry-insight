@@ -412,7 +412,7 @@ with st.sidebar:
     except: 
         st.caption("看板数据同步中...")
 
-st.title("🛡️ Jerry 财务智能体 AI Agent")
+st.title("🛡️省钱智探agent")
 dynamic_profile = get_dynamic_profile()
 st.markdown(f"""> 💳 **Jerry 的当前实时资产面板** ｜ 本月卡里剩余流动资金: :orange[{dynamic_profile['current_surplus']} 元]""")
 
