@@ -23,7 +23,6 @@ if "just_recorded" not in st.session_state:
     st.session_state["just_recorded"] = False
 if 'LAST_AUDIT' not in st.session_state:
     st.session_state['LAST_AUDIT'] = None
-# 🎯【核心修复一】：引入全局防刷提交状态锁
 if 'SUBMIT_PROCESSING' not in st.session_state:
     st.session_state['SUBMIT_PROCESSING'] = False
 
@@ -116,7 +115,7 @@ if 'GLOBAL_MEMORY_MANAGER' not in st.session_state:
 
 
 # ==========================================================
-# 🌟 3. JerryAgentHarness 状态机引擎（🛠️ 彻底修复 ReAct 吞报告与套娃 Bug）
+# 🌟 3. JerryAgentHarness 状态机引擎
 # ==========================================================
 class JerryAgentHarness:
     def __init__(self, max_steps=4):
@@ -130,7 +129,7 @@ class JerryAgentHarness:
             "我们要审计的商品是：【" + str(item_name) + "】。\n\n"
             "【❗⚠️ 核心死命令 ⚠️】\n"
             "你必须且只能输出标准的 JSON 块，禁止包含 any JSON 之外的问候性、引言或多余寒暄。你的输出格式必须 be 以下两种之一：\n\n"
-            "1. 如果需要继续追查搜索（必须是你认为目前全网行情线索匮乏时才使用）：\n"
+            "1. 如果需要 continue 追查搜索（必须是你认为目前全网行情线索匮乏时才使用）：\n"
             "{\"action\": \"Call_Web_Search\", \"action_input\": \"关键词\"}\n\n"
             "2. 如果情报足够，给出最终审计报告（核心内容）：\n"
             "{\n"
@@ -150,7 +149,6 @@ class JerryAgentHarness:
                 response = self.client.chat.completions.create(model=self.model, messages=conversation_history, temperature=0.3)
                 raw_output = response.choices[0].message.content.strip()
                 
-                # 清洗大模型可能自带的 ```json 标记
                 if raw_output.startswith("```json"):
                     raw_output = raw_output.replace("```json", "", 1).rstrip("```").strip()
                 elif raw_output.startswith("```"):
@@ -172,7 +170,6 @@ class JerryAgentHarness:
                 print(f"Harness Step {step} 异常: {e}")
                 if step >= self.max_steps: break
                 
-        # 🚨【核心修正点一】：如果跑完了所有 Step 仍然是个 Action（套娃失败摆烂了），强行拦截触发收敛总结
         if "Final Answer" not in raw_output:
             try:
                 if status_widget: status_widget.write("⚠️ 触发布局收敛机制，正在强行清算账目并生成终报...")
@@ -190,7 +187,6 @@ class JerryAgentHarness:
             except Exception as final_err:
                 print(f"强行收敛失败: {final_err}")
 
-        # 🚨【核心修正点二】：彻底清洗脏数据。如果解析全垮了，手动剥离外部的 JSON 嵌套结构，防止把 action 传到前端
         if 'action_input' in raw_output:
             try:
                 json_match = re.search(r'\{.*\}', raw_output, re.DOTALL)
@@ -201,7 +197,6 @@ class JerryAgentHarness:
                     raw_output = extracted_text
             except: pass
 
-        # 最后的终极价格安全兜底
         if "PRICE_DATA" in raw_output:
             return raw_output
         else:
@@ -211,7 +206,7 @@ class JerryAgentHarness:
 
 
 # ==========================================================
-# 📊 4. FSM 状态机托管管道
+# 4. FSM 状态机托管管道
 # ==========================================================
 def run_fsm_scout_pipeline(query, status_widget):
     fsm = JerryFSMAgent()
@@ -256,6 +251,55 @@ def run_fsm_scout_pipeline(query, status_widget):
     raw_answer = JerryAgentHarness().run_harness(clean_keyword, raw_info_text, get_dynamic_profile(), long_term_context, memory_ctx, status_widget)
     fsm.transition_to("END")
     return raw_answer, clean_keyword, info_blocks, price_table_data, crawler_results, long_term_context
+
+
+# ==========================================================
+# 🎯 🌟【核心重构区一】：彻底解决重复扣款的回调函数机制 🌟
+# ==========================================================
+def callback_confirm_deduct():
+    """将所有导致记账变更、写文件的敏感操作全部收回单次点击事件回调中，彻底消除时序竞争"""
+    if st.session_state['LAST_AUDIT']:
+        audit_data = st.session_state['LAST_AUDIT']
+        try:
+            profile = get_dynamic_profile()
+            
+            # 执行核心扣减
+            profile["current_surplus"] = round(profile["current_surplus"] - audit_data['price'], 2)
+            if audit_data['item'] not in profile["recent_purchases"]:
+                profile["recent_purchases"].append(audit_data['item'])
+                
+            # 瞬间落盘 JSON
+            with open(PROFILE_FILE, "w", encoding="utf-8") as f: 
+                json.dump(profile, f, ensure_ascii=False, indent=4)
+            
+            # 同步写向量库与 SQL
+            memory_collection.add(documents=[f"强行确认购买了关于'{audit_data['item']}'的商品。[已买入]"], ids=[f"pass_{int(time.time())}"])
+            save_audit_log(st.session_state["active_query"], audit_data["display_answer"][:50])
+            
+            # 发送消息通道
+            msg_content = (
+                f"### 🪙 账单自动核销支出回执\n\n"
+                f"--- \n\n"
+                f"👉 **已购入好物**：`{audit_data['item']}`\n\n"
+                f"👉 **本次扣减金额**：`{audit_data['price']} 元`\n\n"
+                f"💰 **本月卡内当前剩余流动资金**：**{profile['current_surplus']} 元**\n\n"
+                f"--- \n"
+                f"» *Jerry风控中心 铁算盘自动审计点出证完毕*"
+            )
+            global_pure_async_notify(None, None, msg_content)
+            
+            # 状态硬洗刷
+            st.session_state["active_query"] = None
+            st.session_state['LAST_AUDIT'] = None
+            st.session_state["just_recorded"] = True
+        except Exception as err:
+            print(f"回调记账安全拦截网关执行异常: {err}")
+            
+def callback_cancel_deduct():
+    """放弃购买回调"""
+    st.session_state["active_query"] = None
+    st.session_state['LAST_AUDIT'] = None
+
 
 # ==========================================================
 # 🎨 5. UI 渲染与侧边栏
@@ -319,7 +363,6 @@ if st.session_state.get("just_recorded", False):
     st.success("💰 资产变更指令强制落地！数字已完全对齐更新！")
     st.session_state["just_recorded"] = False
 
-# 🎯【核心修复二】：当按钮点击扣款触发时，禁用顶部的输入框，防止交叉任务污染
 chat_query = st.chat_input("输入商品名称，开始资产风控审计...", key="user_chat_input_core_key", disabled=st.session_state['SUBMIT_PROCESSING'])
 
 if chat_query and chat_query.strip():
@@ -338,7 +381,6 @@ if chat_query and chat_query.strip():
                 
             status.update(label="🚀 FSM 流程闭合！情报与定向爬虫数据同步完毕！", state="complete", expanded=False)
             
-            # 💡 【修复核心 3】：如果完全没有命中正则，兜底修改为从大模型生成的段落中寻找一个千元级大额数字
             detected_price = 0.0
             if "PRICE_DATA:" in raw_answer:
                 try: 
@@ -354,10 +396,9 @@ if chat_query and chat_query.strip():
                     print(f"⚠️ 价格精细化抽取未命中: {p_err}")
             
             if detected_price == 0.0 or detected_price == 3.5:
-                # 最后的紧急反向追捞兜底逻辑：从文本里的“3000-5000元”捞数字
                 found_numbers = re.findall(r'(\d+)\s*-\s*(\d+)\s*元', raw_answer)
                 if found_numbers:
-                    detected_price = float(found_numbers[0][0])  # 取下限数字如 3000
+                    detected_price = float(found_numbers[0][0])  
                 else:
                     single_nums = re.findall(r'(\d+)\s*元', raw_answer)
                     if single_nums: detected_price = float(single_nums[0])
@@ -386,97 +427,64 @@ main_ui_container = st.empty()
 if st.session_state['LAST_AUDIT']:
     audit_data = st.session_state['LAST_AUDIT']
     
-    if st.session_state['SUBMIT_PROCESSING']:
-        with main_ui_container.container():
-            st.warning("⏳ 铁算盘正在强制核销资产账本，正在进行安全存证与钉钉网关投递...")
-            st.spinner("正在安全记账中，请稍候...")
-    else:
-        with main_ui_container.container():
-            with st.chat_message("user"):
-                st.write(st.session_state["active_query"])
-                
-            with st.chat_message("assistant"):
-                st.markdown("### 🌐 Jerry-Scout 全网核心情报来源与存证链接")
-                blocks = audit_data["info_blocks"]
-                for idx in range(4):
-                    if blocks and idx < len(blocks):
-                        text_snippet, source_url, rerank_score = blocks[idx]
-                    else:
-                        text_snippet = f"对齐商品 【{audit_data['item']}】 的多渠道行情分布与全网存证基准线线索。"
-                        source_url = f"[https://search.smzdm.com/?s=](https://search.smzdm.com/?s=){audit_data['item']}"
-                        rerank_score = 0.88 - (idx * 0.04)
-                        
-                    st.markdown(f"**情报源 [{idx+1}]** ｜ 匹配度分值: `{round(float(rerank_score), 4)}`")
-                    st.caption(f"内容摘要: {text_snippet[:150]}...")
-                    if source_url: st.markdown(f"🔗 [点击查看原始存证网页]({source_url})")
-                    st.write("---")
-
-                st.markdown("### 📌 Jerry-Scout 关联历史输入知识库线索")
-                lt_ctx = audit_data["long_term_context"]
-                if lt_ctx and len(lt_ctx.strip()) > 10:
-                    st.info(f"🔍 铁算盘为你捞出了关于【{audit_data['item']}】的历史输入关联记录快照：\n\n{lt_ctx}")
-                else:
-                    st.caption(f"💡 历史拦截库中暂未匹配到针对“{audit_data['item']}”的历史指纹。已自动保存。")
-
-                st.markdown("### 📊 Jerry-Scout 监测到全网全渠道实时比价盘口")
-                parsed_data = []
-                if audit_data["price_table_data"] and isinstance(audit_data["price_table_data"], list):
-                    parsed_data.extend(audit_data["price_table_data"])
-                if audit_data["crawler_results"]:
-                    for spider_item in audit_data["crawler_results"]:
-                        parsed_data.append({"🛒 渠道平台": f"🔥 {spider_item['platform']}", "💰 实时报价与情报": spider_item['price_info'], "🔗 原始链接": spider_item['source']})
-                if not parsed_data:
-                    parsed_data = [{"🛒 渠道平台": "官方电商渠道", "💰 实时报价与情报": "全网均价约大盘浮动", "🔗 原始链接": "本地商超端"}]
-                    
-                st.dataframe(pd.DataFrame(parsed_data), hide_index=True)
-
-                st.markdown("### 🛡️ Jerry-Insight 深度审计报告")
-                st.markdown(audit_data["display_answer"])
-
-            # 🪙 底部资产核销与决策面板
-            st.write("---")
-            col1, col2 = st.columns(2)
+    with main_ui_container.container():
+        with st.chat_message("user"):
+            st.write(st.session_state["active_query"])
             
-            with col1:
-                if st.button(f"🪙 确认记入账本 (扣减 {audit_data['price']}元)", type="primary", key="btn_confirm_deduct", use_container_width=True, disabled=st.session_state['SUBMIT_PROCESSING']):
-                    st.session_state['SUBMIT_PROCESSING'] = True
-                    st.rerun()
+        with st.chat_message("assistant"):
+            st.markdown("### 🌐 Jerry-Scout 全网核心情报来源与存证链接")
+            blocks = audit_data["info_blocks"]
+            for idx in range(4):
+                if blocks and idx < len(blocks):
+                    text_snippet, source_url, rerank_score = blocks[idx]
+                else:
+                    text_snippet = f"对齐商品 【{audit_data['item']}】 的多渠道行情分布与全网存证基准线线索。"
+                    source_url = f"[https://search.smzdm.com/?s=](https://search.smzdm.com/?s=){audit_data['item']}"
+                    rerank_score = 0.88 - (idx * 0.04)
+                    
+                st.markdown(f"**情报源 [{idx+1}]** ｜ 匹配度分值: `{round(float(rerank_score), 4)}`")
+                st.caption(f"内容摘要: {text_snippet[:150]}...")
+                if source_url: st.markdown(f"🔗 [点击查看原始存证网页]({source_url})")
+                st.write("---")
 
-            with col2:
-                if st.button(f"🙅‍♂️ 听从劝阻 (放弃购买)", type="secondary", key="btn_cancel_deduct", use_container_width=True, disabled=st.session_state['SUBMIT_PROCESSING']):
-                    st.session_state['SUBMIT_PROCESSING'] = True
-                    st.rerun()
+            st.markdown("### 📌 Jerry-Scout 关联历史输入知识库线索")
+            lt_ctx = audit_data["long_term_context"]
+            if lt_ctx and len(lt_ctx.strip()) > 10:
+                st.info(f"🔍 铁算盘为你捞出了关于【{audit_data['item']}】的历史输入关联记录快照：\n\n{lt_ctx}")
+            else:
+                st.caption(f"💡 历史拦截库中暂未匹配到针对“{audit_data['item']}”的历史指纹。已自动保存。")
 
-# 后端核销与状态洗刷
-if st.session_state['LAST_AUDIT'] and st.session_state['SUBMIT_PROCESSING']:
-    audit_data = st.session_state['LAST_AUDIT']
-    try:
-        profile = get_dynamic_profile()
-        profile["current_surplus"] = round(profile["current_surplus"] - audit_data['price'], 2)
-        if audit_data['item'] not in profile["recent_purchases"]:
-            profile["recent_purchases"].append(audit_data['item'])
-        with open(PROFILE_FILE, "w", encoding="utf-8") as f: 
-            json.dump(profile, f, ensure_ascii=False, indent=4)
+            st.markdown("### 📊 Jerry-Scout 监测到全网全渠道实时比价盘口")
+            parsed_data = []
+            if audit_data["price_table_data"] and isinstance(audit_data["price_table_data"], list):
+                parsed_data.extend(audit_data["price_table_data"])
+            if audit_data["crawler_results"]:
+                for spider_item in audit_data["crawler_results"]:
+                    parsed_data.append({"🛒 渠道平台": f"🔥 {spider_item['platform']}", "💰 实时报价与情报": spider_item['price_info'], "🔗 原始链接": spider_item['source']})
+            if not parsed_data:
+                parsed_data = [{"🛒 渠道平台": "官方电商渠道", "💰 实时报价与情报": "全网均价约大盘浮动", "🔗 原始链接": "本地商超端"}]
+                
+            st.dataframe(pd.DataFrame(parsed_data), hide_index=True)
+
+            st.markdown("### 🛡️ Jerry-Insight 深度审计报告")
+            st.markdown(audit_data["display_answer"])
+
+        # 🪙 底部资产核销与决策面板
+        st.write("---")
+        col1, col2 = st.columns(2)
         
-        memory_collection.add(documents=[f"强行确认购买了关于'{audit_data['item']}'的商品。[已买入]"], ids=[f"pass_{int(time.time())}"])
-        save_audit_log(st.session_state["active_query"], audit_data["display_answer"][:50])
+        # 🚨 💼【核心重构区二】：引入前端防穿仓安全锁逻辑
+        current_available_surplus = dynamic_profile.get('current_surplus', 0.0)
+        is_insufficient = current_available_surplus < audit_data['price']
         
-        msg_content = (
-            f"### 🪙 账单自动核销支出回执\n\n"
-            f"--- \n\n"
-            f"👉 **已购入好物**：`{audit_data['item']}`\n\n"
-            f"👉 **本次扣减金额**：`{audit_data['price']} 元`\n\n"
-            f"💰 **本月卡内当前剩余流动资金**：**{profile['current_surplus']} 元**\n\n"
-            f"--- \n"
-            f"» *Jerry风控中心 铁算盘自动审计点出证完毕*"
-        )
-        global_pure_async_notify(None, None, msg_content)
-        
-    except Exception as async_err:
-        print(f"安全防连击网关后端执行异常: {async_err}")
-        
-    st.session_state["active_query"] = None
-    st.session_state['LAST_AUDIT'] = None
-    st.session_state['SUBMIT_PROCESSING'] = False
-    st.session_state["just_recorded"] = True
-    st.rerun()
+        with col1:
+            if is_insufficient:
+                # 账户透支风险拦截：强行将扣款按钮锁定变灰
+                st.button(f"❌ 余额不足支付 ({audit_data['price']}元)", type="primary", key="btn_confirm_deduct", use_container_width=True, disabled=True)
+                st.caption(f"⚠️ 核心支付级风控锁触发：卡内当前剩余流动资金仅 {current_available_surplus} 元，无法核销本次价值 {audit_data['price']} 元的商品。请先重置数据库！")
+            else:
+                # 绑定回调函数：防多重刷单、刷点击
+                st.button(f"🪙 确认记入账本 (扣减 {audit_data['price']}元)", type="primary", key="btn_confirm_deduct", use_container_width=True, on_click=callback_confirm_deduct)
+
+        with col2:
+            st.button(f"🙅‍♂️ 听从劝阻 (放弃购买)", type="secondary", key="btn_cancel_deduct", use_container_width=True, on_click=callback_cancel_deduct)
