@@ -437,14 +437,3 @@ if st.session_state['LAST_AUDIT'] and st.session_state['SUBMIT_PROCESSING']:
     st.session_state["just_recorded"] = True
     st.rerun()
 
-# ---------------------------------------------------------
-st.write("---")
-st.subheader("🧪 钉钉机器人通道联调测试")
-if st.button("🚀 强制发送一封测试消息到我的钉钉", use_container_width=True, disabled=st.session_state['SUBMIT_PROCESSING']):
-    with st.spinner("正在向钉钉官方网关全速投递中..."):
-        res = send_dingtalk_worker_sync(
-            "通道联调测试", 
-            "### 🎉 恭喜！通道联调成功\n\n当你看到这条消息时，说明你的钉钉机器人 Webhook 通道已经稳如磐石地被打通了！\n\n*安全设置校验关键词已通过：Jerry风控中心*"
-        )
-        if res and res.get("errcode") == 0:
-            st.success("💥 钉钉网关已返回成功的回执 (errcode: 0)！")
