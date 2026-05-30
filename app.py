@@ -25,9 +25,15 @@ if 'LAST_AUDIT' not in st.session_state:
     st.session_state['LAST_AUDIT'] = None
 if 'SUBMIT_PROCESSING' not in st.session_state:
     st.session_state['SUBMIT_PROCESSING'] = False
-# 🛠️ 新增：用于记录当前这笔账单是否已经做出决策（点击过按钮）
+# 🛠️ 用于记录当前这笔账单是否已经做出决策（点击过按钮）
 if 'ACTION_COMPLETED' not in st.session_state:
     st.session_state['ACTION_COMPLETED'] = False
+
+# 🔄 【新增】初始化多轮对话上下文与侧边栏历史归档
+if "chat_history" not in st.session_state:
+    st.session_state["chat_history"] = []  # 结构: [{"role": "user/assistant", "content": "..."}]
+if "history_sessions" not in st.session_state:
+    st.session_state["history_sessions"] = [] # 结构: [{"query": "...", "audit_data": {...}}]
 
 # =====================================================================
 # 🛠️ 2. 核心底层组件引入与环境配置对齐
@@ -147,10 +153,22 @@ class JerryAgentHarness:
             "2. 如果情报足够，给出最终审计报告（核心内容）：\n"
             "{\n"
             "  \"action\": \"Final Answer\",\n"
-            "  \"action_input\": \"【建议购买/建议避坑/持币观望】\\n\\n【深度审计理由】：\\n（在这里请结合 Jerry 的月度生活费剩余、历史消费习惯、商品性价比、全网行情，给出极其详尽、深刻、温情地消费心理审计与规避建议。）\\n\\nPRICE_DATA: {\\\"item\\\": \\\"" + str(item_name) + "\\\", \\\"estimated_price\\\": 请填入你根据全网情报审计出的真实合理【单物品单价】数字，不要带‘元’字，例如3.50}\"\n"
+            "  \"action_input\": \"【建议购买/建议避坑/持币观望】\\n\\n【深度审计理由】：\\n（在这里请结合 Jerry 的月度生活费剩余、历史消费习惯、商品性价比、全网行情，以及上下文历史多轮对话中用户的具体倾向，给出极其详尽、深刻、温情地消费心理审计与规避建议。）\\n\\nPRICE_DATA: {\\\"item\\\": \\\"" + str(item_name) + "\\\", \\\"estimated_price\\\": 请填入你根据全网情报审计出的真实合理【单物品单价】数字，不要带‘元’字，例如3.50}\"\n"
             "}"
         )
-        user_input_context = f"【历史档案】：\n{long_term_context}\n\n【治理缓存】：\n{memory_ctx}\n\n【财务画像】：\n- 剩余资金: {profile_data['current_surplus']} 元\n\n【初始情报】：\n{raw_info_text[:1200]}"
+        
+        # 🔄 【深度修复答非所问】：在这里提取短期的历史多轮 Chat History，拼接后注入模型输入端
+        short_term_history_str = ""
+        if st.session_state["chat_history"]:
+            short_term_history_str = "\n".join([f"-> {msg['role'].upper()}: {msg['content']}" for msg in st.session_state["chat_history"][-6:]]) # 取最近3轮交互
+        
+        user_input_context = (
+            f"【短期多轮会话上下文（重要参考，防止答非所问）】:\n{short_term_history_str if short_term_history_str else '暂无前序多轮对话。'}\n\n"
+            f"【历史档案】：\n{long_term_context}\n\n"
+            f"【治理缓存】：\n{memory_ctx}\n\n"
+            f"【财务画像】：\n- 剩余资金: {profile_data['current_surplus']} 元\n\n"
+            f"【初始情报】：\n{raw_info_text[:1200]}"
+        )
         conversation_history = [{"role": "system", "content": system_instruction}, {"role": "user", "content": user_input_context}]
         
         step = 0
@@ -186,7 +204,7 @@ class JerryAgentHarness:
         if "Final Answer" not in raw_output:
             try:
                 if status_widget: status_widget.write("⚠️ 触发布局收敛机制，正在强行清算账目并生成终报...")
-                conversation_history.append({"role": "user", "content": "注意：时间到！请立刻停止任何 Call_Web_Search 动作。基于你目前掌握的所有情报，直接以 Final Answer 的 JSON 格式输出最终审计报告！"})
+                conversation_history.append({"role": "user", "content": "注意：时间到！请立刻停止任何 Call_Web_Search 动作。基于你目前掌握的所有情报与会话上下文，直接以 Final Answer 的 JSON 格式输出最终审计报告！"})
                 final_res = self.client.chat.completions.create(model=self.model, messages=conversation_history, temperature=0.2)
                 raw_output = final_res.choices[0].message.content.strip()
                 
@@ -271,7 +289,6 @@ def run_fsm_scout_pipeline(query, status_widget):
 # =======================================================================
 def callback_execute_confirm():
     """ 真正执行扣款的隔离回调 """
-    # 💥 【重点修复】在回调进入的第1行瞬间将状态锁定，彻底杜绝短时间狂点造成的重复扣款
     st.session_state['ACTION_COMPLETED'] = True
     
     if st.session_state.get('LAST_AUDIT'):
@@ -288,9 +305,6 @@ def callback_execute_confirm():
             memory_collection.add(documents=[f"强行确认购买了关于'{audit_data['item']}'的商品。[已买入]"], ids=[f"pass_{int(time.time())}"])
             save_audit_log(st.session_state["active_query"], audit_data["display_answer"][:50])
             
-            # ==========================================================
-            # 📢 钉钉即时发送核销消息（原有消息通知）
-            # ==========================================================
             msg_content = (
                 f"### 🪙 省钱智探agent · 账单自动核销支出回执\n\n"
                 f"--- \n\n"
@@ -302,9 +316,6 @@ def callback_execute_confirm():
             )
             global_pure_async_notify(None, None, msg_content)
             
-            # ==========================================================
-            # 🚀 【新增功能】扣钱成功后追加发送一条直观的钱款扣减流水账单通知
-            # ==========================================================
             deduct_notice_content = (
                 f"### 💸 资产动态调整 · 实时扣款成功通知\n\n"
                 f"--- \n\n"
@@ -317,12 +328,8 @@ def callback_execute_confirm():
                 f"» *资产实时监控中 · 记账本已同步*"
             )
             global_pure_async_notify(None, None, deduct_notice_content)
-            # ==========================================================
 
-            # 💡【核心修正】强行给 CPU 和网络异步线程留出 0.2 秒的切换和出网缓冲时间
-            # 彻底防止因下方的 st.rerun() 瞬间重置导致子线程网络连接被强行掐断
             time.sleep(0.2)
-
             st.session_state["just_recorded"] = f"💰 资产扣减成功！顺利购入【{audit_data['item']}】，已支出 {audit_data['price']} 元。"
         except Exception as async_err:
             print(f"后端执行异常: {async_err}")
@@ -332,7 +339,6 @@ def callback_execute_confirm():
 
 def callback_execute_cancel():
     """ 纯粹听从劝阻放弃购买的回调 """
-    # 💥 【重点修复】在回调进入的第1行瞬间将状态锁定，彻底杜绝短时间狂点
     st.session_state['ACTION_COMPLETED'] = True
     
     if st.session_state.get('LAST_AUDIT'):
@@ -340,7 +346,6 @@ def callback_execute_cancel():
         try:
             memory_collection.add(documents=[f"听从劝阻放弃购买关于'{audit_data['item']}'的商品。[已拦截]"], ids=[f"block_{int(time.time())}"])
             
-            # 📢 钉钉即时发送拦截消息
             msg_content = (
                 f"### 🙅‍♂️ 省钱智探agent · 冲动消费成功拦截回执\n\n"
                 f"--- \n\n"
@@ -378,9 +383,31 @@ with st.sidebar:
         st.session_state["just_recorded"] = None
         st.session_state['SUBMIT_PROCESSING'] = False
         st.session_state['ACTION_COMPLETED'] = False
+        st.session_state["chat_history"] = []       # 🔄 清空会话
+        st.session_state["history_sessions"] = []   # 🔄 清空历史归档
         st.rerun()
 
     st.button("🧼 一键重置指纹数据库", type="secondary", width=250, on_click=super_clear_all_states, disabled=st.session_state['SUBMIT_PROCESSING'])
+    st.write("---")
+
+    # 🔄 【新增功能】：在侧边栏渲染历史对话记录归档
+    st.subheader("📜 审计历史会话流")
+    if st.session_state["history_sessions"]:
+        for idx, session in enumerate(reversed(st.session_state["history_sessions"])):
+            # 生成带序号和截断的按钮名称
+            btn_label = f"🕒 {len(st.session_state['history_sessions'])-idx}. {session['query'][:12]}..."
+            
+            # 回溯历史的回调闭包函数
+            def make_load_callback(s_data):
+                return lambda: [
+                    st.session_state.update({"active_query": s_data["query"]}),
+                    st.session_state.update({"LAST_AUDIT": s_data["audit_data"]}),
+                    st.session_state.update({"ACTION_COMPLETED": True}) # 历史回顾默认锁死面板按钮
+                ]
+                
+            st.button(btn_label, key=f"hist_btn_{idx}", use_container_width=True, on_click=make_load_callback(session))
+    else:
+        st.caption("暂无前序会话记录")
     st.write("---")
 
     st.subheader("📊 铁算盘·资产风控看板")
@@ -401,11 +428,11 @@ with st.sidebar:
         blacklist = [k for k, v in item_status_map.items() if v == "BLACKLIST"]
         whitelist = [k for k, v in item_status_map.items() if v == "WHITELIST"]
         
-        with st.expander("🔴 被强制拦截的坑位", expanded=True):
+        with st.expander("🔴 被强制拦截的坑位", expanded=False): # 修改默认折叠，留出空间给历史记录
             if blacklist:
                 for item in blacklist[-5:]: st.markdown(f"❌ `{item}`")
             else: st.caption("暂无历史拦截记录")
-        with st.expander("🟢 已安全放行的好物", expanded=True):
+        with st.expander("🟢 已安全放行的好物", expanded=False):
             if whitelist:
                 for item in whitelist[-5:]: st.markdown(f"✅ `{item}`")
             else: st.caption("暂无历史放行记录")
@@ -439,6 +466,9 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
     st.session_state["active_query"] = query_text
     st.session_state['LAST_AUDIT'] = None  # 强清旧账单缓存
     st.session_state['ACTION_COMPLETED'] = False # 重置按钮点击判定
+    
+    # 🔄 【新增】：实时追加短期多轮会话的 User 视角
+    st.session_state["chat_history"].append({"role": "user", "content": query_text})
     
     ask_msg_content = (
         f"### 🔍 省钱智探agent捕获新审计提问\n\n"
@@ -485,7 +515,7 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
                     single_nums = re.findall(r'(\d+)\s*元', raw_answer)
                     if single_nums: detected_price = float(single_nums[0])
 
-            # 🛠️ 【核心逻辑二次纠偏 - 深度解决可乐等饮料被扣除几百元的问题】
+            # 🛠️ 【核心逻辑二次纠偏】
             is_beverage = any(x in clean_keyword.lower() for x in ["可乐", "cola", "饮料", "水", "雪碧", "芬达", "矿泉水"])
             if is_beverage and detected_price > 20.0:
                 detected_price = 3.0
@@ -495,15 +525,28 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
                 else:
                     detected_price = 15.0  
                     
+            # 提炼纯文本答案并清洗 PRICE_DATA 后缀
+            final_display_text = raw_answer.split("PRICE_DATA:")[0] if "PRICE_DATA:" in raw_answer else raw_answer
+            
+            # 🔄 【新增】：实时追加短期多轮会话的 Assistant 视角，彻底闭合会话缓存链条
+            st.session_state["chat_history"].append({"role": "assistant", "content": final_display_text})
+            
             st.session_state['LAST_AUDIT'] = {
                 "price": detected_price, 
                 "item": clean_keyword, 
-                "display_answer": raw_answer.split("PRICE_DATA:")[0] if "PRICE_DATA:" in raw_answer else raw_answer,
+                "display_answer": final_display_text,
                 "info_blocks": info_blocks,
                 "price_table_data": price_table_data,
                 "crawler_results": crawler_results,
                 "long_term_context": long_term_context
             }
+            
+            # 🔄 【新增】：将当前审计成果持久化同步至侧边栏历史归档列表中
+            st.session_state["history_sessions"].append({
+                "query": query_text,
+                "audit_data": st.session_state['LAST_AUDIT']
+            })
+            
         except Exception as e:
             status.update(label=f"❌ 流程运行异常: {str(e)}", state="error", expanded=False)
             st.error(f"引擎报错: {e}")
@@ -516,7 +559,7 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
 
 
 # ==========================================================
-# 🎨 7. 纯静态前端渲染区与交互遮罩管理
+# 🎨 7. 纯静态前端渲染区与交互遮罩 management
 # ==========================================================
 main_ui_container = st.empty()
 
