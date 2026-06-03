@@ -123,6 +123,77 @@ def get_dynamic_profile():
         with open(PROFILE_FILE, "r", encoding="utf-8") as f: 
             return json.load(f)
 
+def parse_direct_accounting_input(text):
+    """识别“已经买了并花了多少钱”的输入；想买/问价不走这里。"""
+    normalized = text.strip()
+    has_done_signal = any(word in normalized for word in ["买了", "花了", "消费了", "付了", "付款", "支出", "用了"])
+    has_future_signal = any(word in normalized for word in ["想买", "准备买", "打算买", "要不要买", "值不值得", "多少钱", "问价"])
+    if not has_done_signal or has_future_signal:
+        return None
+
+    amount_match = re.search(r'(?:花了|花|消费了|消费|付了|付款|支出|用了)?\s*[￥¥]?\s*(\d+(?:\.\d+)?)\s*(?:元|块|块钱|rmb|RMB)', normalized)
+    if not amount_match:
+        return None
+
+    price = round(float(amount_match.group(1)), 2)
+    item_text = normalized
+    item_text = re.sub(r'[￥¥]?\s*\d+(?:\.\d+)?\s*(?:元|块|块钱|rmb|RMB)', '', item_text)
+    item_text = re.sub(r'^(我|俺|今天|刚刚|刚才|已经|直接)?\s*(买了|买|消费了|消费|付了|付款|支出|用了)?', '', item_text)
+    item_text = re.sub(r'(花了|花|消费了|消费|付了|付款|支出|用了)$', '', item_text)
+    item_text = re.sub(r'[，。,.\s]+', '', item_text)
+    item_text = item_text or "未命名消费"
+    return {"item": item_text, "price": price}
+
+def execute_direct_accounting(query_text, item, price):
+    profile = get_dynamic_profile()
+    profile["current_surplus"] = round(profile["current_surplus"] - price, 2)
+    if item not in profile["recent_purchases"]:
+        profile["recent_purchases"].append(item)
+
+    with open(PROFILE_FILE, "w", encoding="utf-8") as f:
+        json.dump(profile, f, ensure_ascii=False, indent=4)
+
+    display_answer = (
+        f"✅ 已直接记账：你已经购买【{item}】，本次支出 **{price} 元**。\n\n"
+        f"💳 当前卡内剩余流动资金：**{profile['current_surplus']} 元**。"
+    )
+    audit_data = {
+        "price": price,
+        "item": item,
+        "display_answer": display_answer,
+        "info_blocks": [],
+        "price_table_data": [{"🛒 渠道平台": "直接记账", "💰 实时报价与情报": f"已支出 {price} 元", "🔗 原始链接": "本地账本"}],
+        "crawler_results": None,
+        "long_term_context": "本次为直接记账，未触发全网审计。"
+    }
+
+    st.session_state["LAST_AUDIT"] = audit_data
+    st.session_state["history_sessions"].append({"query": query_text, "audit_data": audit_data})
+    st.session_state["chat_history"].append({"role": "assistant", "content": display_answer})
+    st.session_state["ACTION_COMPLETED"] = True
+    st.session_state["just_recorded"] = f"💰 已直接记账：{item}，支出 {price} 元。"
+
+    global_pure_async_notify(
+        None,
+        None,
+        (
+            f"### Jerry-Insight 直接记账成功\n\n"
+            f"- 用户输入：`{query_text}`\n"
+            f"- 消费项目：`{item}`\n"
+            f"- 扣款金额：`-{price}` 元\n"
+            f"- 当前余额：`{profile['current_surplus']}` 元\n"
+            f"- 记账时间：`{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}`"
+        )
+    )
+
+    try:
+        memory_collection.add(documents=[f"直接记账购买了关于'{item}'的商品，支出{price}元。[已买入]"], ids=[f"direct_{int(time.time())}"])
+        save_audit_log(query_text, display_answer[:50])
+    except Exception as persist_err:
+        print(f"直接记账已完成，但保存记忆/日志失败: {persist_err}")
+
+    return audit_data
+
 api_key = st.secrets.get("DEEPSEEK_API_KEY", os.getenv("DEEPSEEK_API_KEY", ""))
 base_url = st.secrets.get("DEEPSEEK_BASE_URL", os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"))
 openai_client = OpenAI(api_key=api_key, base_url=base_url)
@@ -472,6 +543,12 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
     
     # 🔄 【新增】：实时追加短期多轮会话的 User 视角
     st.session_state["chat_history"].append({"role": "user", "content": query_text})
+
+    direct_accounting = parse_direct_accounting_input(query_text)
+    if direct_accounting:
+        execute_direct_accounting(query_text, direct_accounting["item"], direct_accounting["price"])
+        st.session_state['SUBMIT_PROCESSING'] = False
+        st.rerun()
     
     ask_msg_content = (
         f"### 🔍 省钱智探agent捕获新审计提问\n\n"
