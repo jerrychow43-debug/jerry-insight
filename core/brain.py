@@ -19,8 +19,7 @@ def ask_llm(messages, json_mode=False):
             model="deepseek-chat",
             messages=messages,
             response_format=response_format,
-            temperature=0.3,
-            timeout=15,
+            temperature=0.3
         )
         return response.choices[0].message.content
     except Exception as e:

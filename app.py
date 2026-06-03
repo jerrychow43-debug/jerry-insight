@@ -9,7 +9,7 @@ import pandas as pd
 import streamlit as st
 import requests  
 from openai import OpenAI
-from concurrent.futures import ThreadPoolExecutor, TimeoutError
+from concurrent.futures import ThreadPoolExecutor
 
 # =====================================================================
 # 🔒 1. 全局配置与环境初始化
@@ -24,9 +24,6 @@ if "just_recorded" not in st.session_state:
 if 'LAST_AUDIT' not in st.session_state:
     st.session_state['LAST_AUDIT'] = None
 if 'SUBMIT_PROCESSING' not in st.session_state:
-    st.session_state['SUBMIT_PROCESSING'] = False
-elif st.session_state['SUBMIT_PROCESSING']:
-    print("[STATE] clearing stale SUBMIT_PROCESSING at script start")
     st.session_state['SUBMIT_PROCESSING'] = False
 # 🛠️ 用于记录当前这笔账单是否已经做出决策（点击过按钮）
 if 'ACTION_COMPLETED' not in st.session_state:
@@ -44,58 +41,16 @@ if "history_sessions" not in st.session_state:
 from bs4 import BeautifulSoup  
 from core.router import classify_intent, clean_query_to_entity
 from core.intent_plus import classify_user_intent
+from core.memory_manager import AdvancedMemoryManager
+from core.hybrid_retriever import JaccardHybridRetriever
+from tools.mcp_server import JerryMcpServer
 
+from core.brain import ask_llm
+from tools.search import web_search_pro
+from tools.price_crawler import crawl_smzdm_price      
+from core.jerry_fsm_agent import JerryFSMAgent      
 from data.sql_db import init_runtime_tables, load_recent_chat_history, save_audit_log, save_chat_history, save_notification_log
 from dotenv import load_dotenv
-
-try:
-    from core.hybrid_retriever import JaccardHybridRetriever
-except KeyError as import_err:
-    print(f"Hybrid retriever hot-reload import failed, using local fallback: {import_err}")
-
-    class JaccardHybridRetriever:
-        def __init__(self, collection):
-            self.collection = collection
-
-        def retrieve_and_rerank(self, query):
-            return "历史档案检索暂时隔离，已跳过历史关联。"
-
-try:
-    from core.memory_manager import AdvancedMemoryManager
-except KeyError as import_err:
-    print(f"Memory manager hot-reload import failed, using local fallback: {import_err}")
-
-    class AdvancedMemoryManager:
-        def __init__(self, client, max_turns: int = 3):
-            self.client = client
-            self.max_turns = max_turns
-            self.short_term_memory = []
-
-        def add_message(self, role: str, content: str):
-            self.short_term_memory.append({"role": role, "content": content})
-            self.short_term_memory = self.short_term_memory[-(self.max_turns * 2):]
-
-        def get_compiled_context(self) -> str:
-            lines = ["【近期临近会话上下文】"]
-            for msg in self.short_term_memory:
-                role_tag = "用户" if msg["role"] == "user" else "铁算盘"
-                lines.append(f"- {role_tag}: {msg['content']}")
-            return "\n".join(lines)
-
-
-def safe_web_search_pro(keyword):
-    from tools.search import web_search_pro
-    return web_search_pro(keyword)
-
-
-def safe_crawl_smzdm_price(keyword):
-    from tools.price_crawler import crawl_smzdm_price
-    return crawl_smzdm_price(keyword)
-
-
-def create_fsm_agent():
-    from core.jerry_fsm_agent import JerryFSMAgent
-    return JerryFSMAgent()
 
 load_dotenv()
 init_runtime_tables()
@@ -105,7 +60,7 @@ DINGTALK_WEBHOOK = st.secrets.get("DINGTALK_WEBHOOK", os.getenv("DINGTALK_WEBHOO
 
 def send_dingtalk_worker_sync(title, markdown_content):
     if not DINGTALK_WEBHOOK:
-        print("DINGTALK_WEBHOOK is missing.")
+        st.toast("⚠️ 未检测到 DINGTALK_WEBHOOK 凭证", icon="❌")
         return {"errcode": -1, "errmsg": "No webhook url"}
 
     headers = {"Content-Type": "application/json;charset=utf-8"}
@@ -123,16 +78,16 @@ def send_dingtalk_worker_sync(title, markdown_content):
         res_json = response.json()
         save_notification_log("dingtalk", full_title, markdown_content, "success" if res_json.get("errcode") == 0 else "failed", json.dumps(res_json, ensure_ascii=False))
         if res_json.get("errcode") == 0:
-            print(f"DingTalk notification success: {full_title} response={json.dumps(res_json, ensure_ascii=False)}")
+            st.toast("💥【钉钉推送成功】已顺利送达群聊！", icon="✅")
         else:
             if res_json.get("errcode") == 310000:
-                print("DingTalk security keyword/signature mismatch.")
+                st.toast(f"🚨【钉钉安全拦截】: 关键词不匹配或未配置安全加签密钥！", icon="🔒")
             else:
-                print(f"DingTalk notification failed: {res_json.get('errmsg')}")
+                st.toast(f"❌【钉钉内部错误】: {res_json.get('errmsg')}", icon="🚨")
         return res_json
     except Exception as e:
         save_notification_log("dingtalk", full_title if "full_title" in locals() else title, markdown_content, "error", str(e))
-        print(f"DingTalk network error: {e}")
+        st.toast(f"⚠️ 钉钉网关网络异常: {e}", icon="📡")
         return {"errcode": -2, "errmsg": str(e)}
 
 if 'ASYNC_EXECUTOR' not in st.session_state:
@@ -316,7 +271,7 @@ class JerryAgentHarness:
             step += 1
             try:
                 if status_widget: status_widget.write(f"🧠 [Harness 状态机] 推理寻优中 ({step}/{self.max_steps})...")
-                response = self.client.chat.completions.create(model=self.model, messages=conversation_history, temperature=0.3, timeout=20)
+                response = self.client.chat.completions.create(model=self.model, messages=conversation_history, temperature=0.3)
                 raw_output = response.choices[0].message.content.strip()
                 
                 if raw_output.startswith("```json"):
@@ -333,7 +288,7 @@ class JerryAgentHarness:
                 elif parsed_json.get("action") == "Call_Web_Search":
                     search_kw = parsed_json.get("action_input")
                     if status_widget: status_widget.write(f"🔍 触发多路追查，深度搜索: `{search_kw}`...")
-                    _, search_feedback_text, _ = safe_web_search_pro(search_kw)
+                    _, search_feedback_text, _ = web_search_pro(search_kw)
                     conversation_history.append({"role": "assistant", "content": raw_output})
                     conversation_history.append({"role": "user", "content": f"【追查情报反馈】：\n{search_feedback_text[:1200]}"})
             except Exception as e:
@@ -344,7 +299,7 @@ class JerryAgentHarness:
             try:
                 if status_widget: status_widget.write("⚠️ 触发布局收敛机制，正在强行清算账目并生成终报...")
                 conversation_history.append({"role": "user", "content": "注意：时间到！请立刻停止任何 Call_Web_Search 动作。基于你目前掌握的所有情报与会话上下文，直接以 Final Answer 的 JSON 格式输出最终审计报告！"})
-                final_res = self.client.chat.completions.create(model=self.model, messages=conversation_history, temperature=0.2, timeout=20)
+                final_res = self.client.chat.completions.create(model=self.model, messages=conversation_history, temperature=0.2)
                 raw_output = final_res.choices[0].message.content.strip()
                 
                 if raw_output.startswith("```"): 
@@ -379,7 +334,7 @@ class JerryAgentHarness:
 # 👑 4. FSM 状态机托管管道
 # ==========================================================
 def run_fsm_scout_pipeline(query, status_widget):
-    fsm = create_fsm_agent()
+    fsm = JerryFSMAgent()
     fsm.transition_to("INTENT_CHECK")
     if classify_intent(query) == "INVALID":
         fsm.transition_to("END")
@@ -389,24 +344,19 @@ def run_fsm_scout_pipeline(query, status_widget):
     clean_keyword = clean_query_to_entity(query)
     
     future_memory = st.session_state['ASYNC_EXECUTOR'].submit(hybrid_retriever.retrieve_and_rerank, query)
-    future_crawler = st.session_state['ASYNC_EXECUTOR'].submit(safe_crawl_smzdm_price, clean_keyword)
+    future_web = st.session_state['ASYNC_EXECUTOR'].submit(web_search_pro, clean_keyword)
+    future_crawler = st.session_state['ASYNC_EXECUTOR'].submit(crawl_smzdm_price, clean_keyword)
     
     try:
         existing_data = memory_collection.get()
         if not existing_data or not existing_data.get("ids") or len(existing_data["ids"]) == 0:
             long_term_context = "暂无历史档案存证。"
         else:
-            long_term_context = future_memory.result(timeout=4)
+            long_term_context = future_memory.result()
     except Exception as chroma_err:
         long_term_context = "历史档案加载隔离状态。" 
 
-    try:
-        raw_info_blocks, raw_info_text, price_table_data = safe_web_search_pro(clean_keyword)
-    except Exception as web_err:
-        print(f"web search failed for query={clean_keyword}: {web_err}")
-        raw_info_blocks = []
-        raw_info_text = f"实时搜索失败，已使用本地兜底情报继续审计：{clean_keyword}"
-        price_table_data = []
+    raw_info_blocks, raw_info_text, price_table_data = future_web.result()
     
     crawler_results = None
     try:
@@ -593,7 +543,7 @@ if st.session_state.get("just_recorded"):
     st.session_state["just_recorded"] = None
 
 # 对话框管理
-chat_query = st.chat_input("输入商品名称，开始资产风控审计...", key="user_chat_input_core_key", disabled=False)
+chat_query = st.chat_input("输入商品名称，开始资产风控审计...", key="user_chat_input_core_key", disabled=st.session_state['SUBMIT_PROCESSING'])
 
 # ==========================================================
 # 🚨 6. 核心高能控制器流程整合与修复
@@ -604,9 +554,8 @@ if st.session_state['SUBMIT_PROCESSING'] and st.session_state["active_query"] is
         st.session_state["active_query"] = target_query
 
 # 拦截 chat_input 的真实提交事件
-if chat_query and chat_query.strip():
+if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING']:
     query_text = chat_query.strip()
-    print(f"[CHAT] received query={query_text}")
     st.session_state['SUBMIT_PROCESSING'] = True
     st.session_state["active_query"] = query_text
     st.session_state['LAST_AUDIT'] = None  # 强清旧账单缓存
@@ -624,17 +573,8 @@ if chat_query and chat_query.strip():
         with st.chat_message("assistant"):
             st.markdown(reply_text)
         st.session_state['SUBMIT_PROCESSING'] = False
-        st.session_state["LAST_AUDIT"] = {
-            "price": 0.0,
-            "item": query_text,
-            "display_answer": reply_text,
-            "info_blocks": [],
-            "price_table_data": [],
-            "crawler_results": [],
-            "long_term_context": "",
-            "read_only": True,
-        }
-        st.rerun()
+        st.session_state["active_query"] = None
+        st.stop()
 
     if parsed_intent.intent == "DIRECT_EXPENSE":
         reply_text, _ = record_direct_expense(parsed_intent.item_name, parsed_intent.amount, query_text)
@@ -643,17 +583,8 @@ if chat_query and chat_query.strip():
         with st.chat_message("assistant"):
             st.success(reply_text)
         st.session_state['SUBMIT_PROCESSING'] = False
-        st.session_state["LAST_AUDIT"] = {
-            "price": float(parsed_intent.amount),
-            "item": parsed_intent.item_name,
-            "display_answer": reply_text,
-            "info_blocks": [],
-            "price_table_data": [],
-            "crawler_results": [],
-            "long_term_context": "",
-            "read_only": True,
-        }
-        st.rerun()
+        st.session_state["active_query"] = None
+        st.stop()
     
     ask_msg_content = (
         f"### 🔍 省钱智探agent捕获新审计提问\n\n"
@@ -673,17 +604,8 @@ if chat_query and chat_query.strip():
                 status.update(label="🚨 监测到非业务输入。", state="error", expanded=False)
                 st.error("请输入有效的业务商品进行审计. ")
                 st.session_state['SUBMIT_PROCESSING'] = False
-                st.session_state["LAST_AUDIT"] = {
-                    "price": 0.0,
-                    "item": query_text,
-                    "display_answer": "这句话没有被识别成商品审计请求。你可以试试：我想买可乐，帮我看看值不值得。",
-                    "info_blocks": [],
-                    "price_table_data": [],
-                    "crawler_results": [],
-                    "long_term_context": "",
-                    "read_only": True,
-                }
-                st.rerun()
+                st.session_state["active_query"] = None
+                st.stop()
                 
             status.update(label="🚀 FSM 流程闭合！情报与定向爬虫数据同步完毕！", state="complete", expanded=False)
             
@@ -750,25 +672,11 @@ if chat_query and chat_query.strip():
             status.update(label=f"❌ 流程运行异常: {str(e)}", state="error", expanded=False)
             st.error(f"引擎报错: {e}")
             st.session_state['SUBMIT_PROCESSING'] = False
-            st.session_state["LAST_AUDIT"] = {
-                "price": 0.0,
-                "item": query_text,
-                "display_answer": (
-                    "### 审计流程中断\n\n"
-                    f"我已经收到你的问题：`{query_text}`，但后续搜索或审计流程出现异常。\n\n"
-                    f"错误信息：`{e}`\n\n"
-                    "可以再试一次，或者输入更短的商品名，比如：可乐、雪碧、拍立得。"
-                ),
-                "info_blocks": [],
-                "price_table_data": [],
-                "crawler_results": [],
-                "long_term_context": "",
-                "read_only": True,
-            }
-            st.rerun()
+            st.session_state["active_query"] = None
+            st.stop()
             
     st.session_state['SUBMIT_PROCESSING'] = False
-    # Keep the completed audit visible in this same run instead of flashing away.
+    st.rerun()
 
 
 # ==========================================================
