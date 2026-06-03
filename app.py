@@ -105,7 +105,7 @@ DINGTALK_WEBHOOK = st.secrets.get("DINGTALK_WEBHOOK", os.getenv("DINGTALK_WEBHOO
 
 def send_dingtalk_worker_sync(title, markdown_content):
     if not DINGTALK_WEBHOOK:
-        st.toast("⚠️ 未检测到 DINGTALK_WEBHOOK 凭证", icon="❌")
+        print("DINGTALK_WEBHOOK is missing.")
         return {"errcode": -1, "errmsg": "No webhook url"}
 
     headers = {"Content-Type": "application/json;charset=utf-8"}
@@ -123,16 +123,16 @@ def send_dingtalk_worker_sync(title, markdown_content):
         res_json = response.json()
         save_notification_log("dingtalk", full_title, markdown_content, "success" if res_json.get("errcode") == 0 else "failed", json.dumps(res_json, ensure_ascii=False))
         if res_json.get("errcode") == 0:
-            st.toast("💥【钉钉推送成功】已顺利送达群聊！", icon="✅")
+            print(f"DingTalk notification success: {full_title} response={json.dumps(res_json, ensure_ascii=False)}")
         else:
             if res_json.get("errcode") == 310000:
-                st.toast(f"🚨【钉钉安全拦截】: 关键词不匹配或未配置安全加签密钥！", icon="🔒")
+                print("DingTalk security keyword/signature mismatch.")
             else:
-                st.toast(f"❌【钉钉内部错误】: {res_json.get('errmsg')}", icon="🚨")
+                print(f"DingTalk notification failed: {res_json.get('errmsg')}")
         return res_json
     except Exception as e:
         save_notification_log("dingtalk", full_title if "full_title" in locals() else title, markdown_content, "error", str(e))
-        st.toast(f"⚠️ 钉钉网关网络异常: {e}", icon="📡")
+        print(f"DingTalk network error: {e}")
         return {"errcode": -2, "errmsg": str(e)}
 
 if 'ASYNC_EXECUTOR' not in st.session_state:
@@ -389,7 +389,6 @@ def run_fsm_scout_pipeline(query, status_widget):
     clean_keyword = clean_query_to_entity(query)
     
     future_memory = st.session_state['ASYNC_EXECUTOR'].submit(hybrid_retriever.retrieve_and_rerank, query)
-    future_web = st.session_state['ASYNC_EXECUTOR'].submit(safe_web_search_pro, clean_keyword)
     future_crawler = st.session_state['ASYNC_EXECUTOR'].submit(safe_crawl_smzdm_price, clean_keyword)
     
     try:
@@ -402,12 +401,7 @@ def run_fsm_scout_pipeline(query, status_widget):
         long_term_context = "历史档案加载隔离状态。" 
 
     try:
-        raw_info_blocks, raw_info_text, price_table_data = future_web.result(timeout=8)
-    except TimeoutError:
-        print(f"web search timed out for query={clean_keyword}")
-        raw_info_blocks = []
-        raw_info_text = f"实时搜索超时，已使用本地兜底情报继续审计：{clean_keyword}"
-        price_table_data = []
+        raw_info_blocks, raw_info_text, price_table_data = safe_web_search_pro(clean_keyword)
     except Exception as web_err:
         print(f"web search failed for query={clean_keyword}: {web_err}")
         raw_info_blocks = []
