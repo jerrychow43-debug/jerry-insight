@@ -44,10 +44,21 @@ if "history_sessions" not in st.session_state:
 from bs4 import BeautifulSoup  
 from core.router import classify_intent, clean_query_to_entity
 from core.intent_plus import classify_user_intent
-from core.hybrid_retriever import JaccardHybridRetriever
 
 from data.sql_db import init_runtime_tables, load_recent_chat_history, save_audit_log, save_chat_history, save_notification_log
 from dotenv import load_dotenv
+
+try:
+    from core.hybrid_retriever import JaccardHybridRetriever
+except KeyError as import_err:
+    print(f"Hybrid retriever hot-reload import failed, using local fallback: {import_err}")
+
+    class JaccardHybridRetriever:
+        def __init__(self, collection):
+            self.collection = collection
+
+        def retrieve_and_rerank(self, query):
+            return "历史档案检索暂时隔离，已跳过历史关联。"
 
 try:
     from core.memory_manager import AdvancedMemoryManager
