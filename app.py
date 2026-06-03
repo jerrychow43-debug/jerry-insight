@@ -25,16 +25,11 @@ if 'LAST_AUDIT' not in st.session_state:
     st.session_state['LAST_AUDIT'] = None
 if 'SUBMIT_PROCESSING' not in st.session_state:
     st.session_state['SUBMIT_PROCESSING'] = False
-if 'PENDING_QUERY' not in st.session_state:
-    st.session_state['PENDING_QUERY'] = None
 # 🛠️ 用于记录当前这笔账单是否已经做出决策（点击过按钮）
 if 'ACTION_COMPLETED' not in st.session_state:
     st.session_state['ACTION_COMPLETED'] = False
 
 # 🔄 【新增】初始化多轮对话上下文与侧边栏历史归档
-if st.session_state.get("SUBMIT_PROCESSING") and st.session_state.get("LAST_AUDIT"):
-    st.session_state["SUBMIT_PROCESSING"] = False
-
 if "chat_history" not in st.session_state:
     st.session_state["chat_history"] = []  # 结构: [{"role": "user/assistant", "content": "..."}]
 if "history_sessions" not in st.session_state:
@@ -44,73 +39,18 @@ if "history_sessions" not in st.session_state:
 # 🛠️ 2. 核心底层组件引入与环境配置对齐
 # =====================================================================
 from bs4 import BeautifulSoup  
-from core.router import clean_query_to_entity, fallback_clean_query_to_entity
+from core.router import classify_intent, clean_query_to_entity
 from core.intent_plus import classify_user_intent
+from core.memory_manager import AdvancedMemoryManager
 from core.hybrid_retriever import JaccardHybridRetriever
 from tools.mcp_server import JerryMcpServer
 
+from core.brain import ask_llm
+from tools.search import web_search_pro
+from tools.price_crawler import crawl_smzdm_price      
+from core.jerry_fsm_agent import JerryFSMAgent      
 from data.sql_db import init_runtime_tables, load_recent_chat_history, save_audit_log, save_chat_history, save_notification_log
 from dotenv import load_dotenv
-
-try:
-    from core.memory_manager import AdvancedMemoryManager
-except KeyError as import_err:
-    print(f"Memory manager hot-reload import failed, using local fallback: {import_err}")
-
-    class AdvancedMemoryManager:
-        def __init__(self, client, max_turns: int = 3):
-            self.client = client
-            self.max_turns = max_turns
-            self.short_term_memory = []
-
-        def add_message(self, role: str, content: str):
-            self.short_term_memory.append({"role": role, "content": content})
-            self.short_term_memory = self.short_term_memory[-(self.max_turns * 2):]
-
-        def get_compiled_context(self) -> str:
-            lines = ["【近期临近会话上下文】:"]
-            for msg in self.short_term_memory:
-                role_tag = "用户" if msg["role"] == "user" else "铁算盘"
-                lines.append(f"- {role_tag}: {msg['content']}")
-            return "\n".join(lines)
-
-
-def safe_web_search_pro(keyword):
-    try:
-        from tools.search import web_search_pro
-        return web_search_pro(keyword)
-    except Exception as exc:
-        print(f"web_search_pro unavailable, using fallback: {exc}")
-        fallback_block = [(f"暂未取得实时网页搜索结果，已使用本地兜底行情判断：{keyword}", "", 0.5)]
-        fallback_text = f"【本地兜底情报】暂未取得 {keyword} 的实时搜索结果，请结合常识和预算谨慎判断。"
-        return fallback_block, fallback_text, []
-
-
-def safe_crawl_smzdm_price(keyword):
-    try:
-        from tools.price_crawler import crawl_smzdm_price
-        return crawl_smzdm_price(keyword)
-    except Exception as exc:
-        print(f"crawl_smzdm_price unavailable, skipping crawler: {exc}")
-        return []
-
-
-def create_fsm_agent():
-    try:
-        from core.jerry_fsm_agent import JerryFSMAgent
-        return JerryFSMAgent()
-    except Exception as exc:
-        print(f"JerryFSMAgent unavailable, using local fallback: {exc}")
-
-        class LocalFSMAgent:
-            def __init__(self):
-                self.current_state = "INIT"
-
-            def transition_to(self, next_state):
-                print(f"[FSM fallback] {self.current_state} -> {next_state}")
-                self.current_state = next_state
-
-        return LocalFSMAgent()
 
 load_dotenv()
 init_runtime_tables()
@@ -150,37 +90,6 @@ def send_dingtalk_worker_sync(title, markdown_content):
         st.toast(f"⚠️ 钉钉网关网络异常: {e}", icon="📡")
         return {"errcode": -2, "errmsg": str(e)}
 
-def send_dingtalk_background(title, markdown_content):
-    if not DINGTALK_WEBHOOK:
-        save_notification_log("dingtalk", title, markdown_content, "failed", "No webhook url")
-        print("DINGTALK_WEBHOOK is missing.")
-        return {"errcode": -1, "errmsg": "No webhook url"}
-
-    headers = {"Content-Type": "application/json;charset=utf-8"}
-    full_title = f"Jerry-Insight - {title}"
-    markdown_content = f"省钱智探agent\n\n{markdown_content}"
-    data = {
-        "msgtype": "markdown",
-        "markdown": {
-            "title": full_title,
-            "text": f"## Jerry-Insight 实时通知\n\n{markdown_content}",
-        },
-    }
-    try:
-        response = requests.post(DINGTALK_WEBHOOK, data=json.dumps(data), headers=headers, timeout=10)
-        try:
-            res_json = response.json()
-        except Exception:
-            res_json = {"status_code": response.status_code, "text": response.text[:300]}
-        status = "success" if res_json.get("errcode") == 0 else "failed"
-        save_notification_log("dingtalk", full_title, markdown_content, status, json.dumps(res_json, ensure_ascii=False))
-        print(f"DingTalk notification {status}: {full_title}; response={json.dumps(res_json, ensure_ascii=False)}")
-        return res_json
-    except Exception as e:
-        save_notification_log("dingtalk", full_title, markdown_content, "error", str(e))
-        print(f"DingTalk notification error: {e}")
-        return {"errcode": -2, "errmsg": str(e)}
-
 if 'ASYNC_EXECUTOR' not in st.session_state:
     st.session_state['ASYNC_EXECUTOR'] = ThreadPoolExecutor(max_workers=8)
 
@@ -188,8 +97,9 @@ def global_pure_async_notify(ding_token, wx_token, content):
     """ 异步推送核心：扔进线程池，杜绝因网络延迟导致的前端卡顿 """
     title = "资产动态调整"
     if 'ASYNC_EXECUTOR' in st.session_state:
-        return st.session_state['ASYNC_EXECUTOR'].submit(send_dingtalk_background, title, content)
-    return send_dingtalk_background(title, content)
+        st.session_state['ASYNC_EXECUTOR'].submit(send_dingtalk_worker_sync, title, content)
+    else:
+        send_dingtalk_worker_sync(title, content)
 
 FILE_LOCK = threading.Lock()
 PROFILE_FILE = "jerry_profile.json"
@@ -307,62 +217,6 @@ def record_direct_expense(item_name, amount, source_query=""):
     )
     return reply, profile
 
-
-def is_cloud_runtime():
-    return os.path.exists("/mount/src/jerry-insight") or bool(os.getenv("STREAMLIT_RUNTIME_ENV"))
-
-
-def estimate_cloud_price(item_name):
-    text = (item_name or "").lower()
-    cheap_terms = ["可乐", "雪碧", "芬达", "饮料", "矿泉水", "水", "cola", "零食", "泡面"]
-    if any(term in text for term in cheap_terms):
-        return 3.0
-    if any(term in text for term in ["奶茶", "咖啡"]):
-        return 18.0
-    if any(term in text for term in ["拍立得", "相机"]):
-        return 599.0
-    if any(term in text for term in ["手机", "iphone"]):
-        return 3999.0
-    if any(term in text for term in ["电脑", "笔记本"]):
-        return 5999.0
-    if any(term in text for term in ["耳机", "键盘", "鼠标", "充电器"]):
-        return 199.0
-    return 99.0
-
-
-def build_cloud_audit(query_text):
-    clean_keyword = fallback_clean_query_to_entity(query_text)
-    if clean_keyword == "NONE":
-        clean_keyword = query_text.strip()
-    detected_price = estimate_cloud_price(clean_keyword)
-    profile = get_dynamic_profile()
-    expected_surplus = round(float(profile.get("current_surplus", 0)) - detected_price, 2)
-    if expected_surplus < 0:
-        suggestion = "建议先别买。当前预算不够，这笔消费会让余额变成负数。"
-    elif detected_price <= 20:
-        suggestion = "金额不高，可以买；如果这是冲动购买，也可以先放购物车冷静一下。"
-    else:
-        suggestion = "建议先比价或等优惠。确认确实需要以后，再点下面的确认记账。"
-    display_answer = (
-        f"### {clean_keyword} 购买审计\n\n"
-        f"- 预估价格：{detected_price:g} 元\n"
-        f"- 当前余额：{profile.get('current_surplus')} 元\n"
-        f"- 买完预计剩余：{expected_surplus:g} 元\n\n"
-        f"{suggestion}\n\n"
-        "如果你已经买了并且价格确定，也可以直接说：买了这个花了多少元。"
-    )
-    return {
-        "price": detected_price,
-        "item": clean_keyword,
-        "display_answer": display_answer,
-        "info_blocks": [],
-        "price_table_data": [
-            {"渠道": "云端快速估算", "报价": f"{detected_price:g} 元", "说明": "稳定模式，避免云端长流程卡住"}
-        ],
-        "crawler_results": [],
-        "long_term_context": "云端快速模式：已先给出可操作建议，并保留确认记账按钮。",
-    }
-
 api_key = st.secrets.get("DEEPSEEK_API_KEY", os.getenv("DEEPSEEK_API_KEY", ""))
 base_url = st.secrets.get("DEEPSEEK_BASE_URL", os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"))
 openai_client = OpenAI(api_key=api_key, base_url=base_url)
@@ -434,7 +288,7 @@ class JerryAgentHarness:
                 elif parsed_json.get("action") == "Call_Web_Search":
                     search_kw = parsed_json.get("action_input")
                     if status_widget: status_widget.write(f"🔍 触发多路追查，深度搜索: `{search_kw}`...")
-                    _, search_feedback_text, _ = safe_web_search_pro(search_kw)
+                    _, search_feedback_text, _ = web_search_pro(search_kw)
                     conversation_history.append({"role": "assistant", "content": raw_output})
                     conversation_history.append({"role": "user", "content": f"【追查情报反馈】：\n{search_feedback_text[:1200]}"})
             except Exception as e:
@@ -480,22 +334,18 @@ class JerryAgentHarness:
 # 👑 4. FSM 状态机托管管道
 # ==========================================================
 def run_fsm_scout_pipeline(query, status_widget):
-    fsm = create_fsm_agent()
+    fsm = JerryFSMAgent()
     fsm.transition_to("INTENT_CHECK")
-    if classify_user_intent(query).intent != "SHOPPING_QUERY":
+    if classify_intent(query) == "INVALID":
         fsm.transition_to("END")
         return "INVALID_INTENT", None, None, None, None, ""
 
     fsm.transition_to("PRICE_SCOUT")
-    clean_keyword = fallback_clean_query_to_entity(query)
-    if clean_keyword == "NONE":
-        clean_keyword = clean_query_to_entity(query)
-    if clean_keyword == "NONE":
-        clean_keyword = query.strip()
+    clean_keyword = clean_query_to_entity(query)
     
     future_memory = st.session_state['ASYNC_EXECUTOR'].submit(hybrid_retriever.retrieve_and_rerank, query)
-    future_web = st.session_state['ASYNC_EXECUTOR'].submit(safe_web_search_pro, clean_keyword)
-    future_crawler = st.session_state['ASYNC_EXECUTOR'].submit(safe_crawl_smzdm_price, clean_keyword)
+    future_web = st.session_state['ASYNC_EXECUTOR'].submit(web_search_pro, clean_keyword)
+    future_crawler = st.session_state['ASYNC_EXECUTOR'].submit(crawl_smzdm_price, clean_keyword)
     
     try:
         existing_data = memory_collection.get()
@@ -644,7 +494,6 @@ with st.sidebar:
             # 回溯历史的回调闭包函数
             def make_load_callback(s_data):
                 return lambda: [
-                    st.session_state.update({"SUBMIT_PROCESSING": False}),
                     st.session_state.update({"active_query": s_data["query"]}),
                     st.session_state.update({"LAST_AUDIT": s_data["audit_data"]}),
                     st.session_state.update({"ACTION_COMPLETED": True}) # 历史回顾默认锁死面板按钮
@@ -694,8 +543,7 @@ if st.session_state.get("just_recorded"):
     st.session_state["just_recorded"] = None
 
 # 对话框管理
-st.session_state['SUBMIT_PROCESSING'] = False
-chat_query = st.chat_input("输入商品名称，开始资产风控审计...", key="user_chat_input_core_key", disabled=False)
+chat_query = st.chat_input("输入商品名称，开始资产风控审计...", key="user_chat_input_core_key", disabled=st.session_state['SUBMIT_PROCESSING'])
 
 # ==========================================================
 # 🚨 6. 核心高能控制器流程整合与修复
@@ -706,15 +554,8 @@ if st.session_state['SUBMIT_PROCESSING'] and st.session_state["active_query"] is
         st.session_state["active_query"] = target_query
 
 # 拦截 chat_input 的真实提交事件
-if st.session_state.get("PENDING_QUERY") or (chat_query and chat_query.strip()):
-    if chat_query and chat_query.strip() and not st.session_state.get("PENDING_QUERY"):
-        st.session_state["PENDING_QUERY"] = chat_query.strip()
-        st.session_state["active_query"] = chat_query.strip()
-        st.session_state['LAST_AUDIT'] = None
-        st.session_state['ACTION_COMPLETED'] = False
-        st.rerun()
-
-    query_text = st.session_state.pop("PENDING_QUERY", None) or (chat_query.strip() if chat_query else "")
+if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING']:
+    query_text = chat_query.strip()
     st.session_state['SUBMIT_PROCESSING'] = True
     st.session_state["active_query"] = query_text
     st.session_state['LAST_AUDIT'] = None  # 强清旧账单缓存
@@ -733,69 +574,19 @@ if st.session_state.get("PENDING_QUERY") or (chat_query and chat_query.strip()):
             st.markdown(reply_text)
         st.session_state['SUBMIT_PROCESSING'] = False
         st.session_state["active_query"] = None
-        st.session_state["LAST_AUDIT"] = {
-            "price": 0.0,
-            "item": query_text,
-            "display_answer": reply_text,
-            "info_blocks": [],
-            "price_table_data": [],
-            "crawler_results": [],
-            "long_term_context": "",
-            "read_only": True,
-        }
-        st.session_state["active_query"] = query_text
-        st.rerun()
+        st.stop()
 
     if parsed_intent.intent == "DIRECT_EXPENSE":
-        reply_text, profile_after_record = record_direct_expense(parsed_intent.item_name, parsed_intent.amount, query_text)
+        reply_text, _ = record_direct_expense(parsed_intent.item_name, parsed_intent.amount, query_text)
         reload_history_sessions()
         st.session_state["chat_history"].append({"role": "assistant", "content": reply_text})
-        st.session_state["LAST_AUDIT"] = {
-            "price": float(parsed_intent.amount),
-            "item": parsed_intent.item_name,
-            "display_answer": (
-                f"### 已扣除 {parsed_intent.item_name} {float(parsed_intent.amount):g} 元\n\n"
-                f"{reply_text}\n\n"
-                f"当前余额：{profile_after_record['current_surplus']} 元"
-            ),
-            "info_blocks": [],
-            "price_table_data": [],
-            "crawler_results": [],
-            "long_term_context": "",
-            "read_only": True,
-        }
+        with st.chat_message("assistant"):
+            st.success(reply_text)
         st.session_state['SUBMIT_PROCESSING'] = False
-        st.session_state["just_recorded"] = f"已扣除 {parsed_intent.item_name} {float(parsed_intent.amount):g} 元"
-        st.rerun()
+        st.session_state["active_query"] = None
+        st.stop()
     
-    if is_cloud_runtime():
-        audit_data = build_cloud_audit(query_text)
-        st.session_state["LAST_AUDIT"] = audit_data
-        st.session_state["chat_history"].append({"role": "assistant", "content": audit_data["display_answer"]})
-        save_chat_history(
-            query_text,
-            "SHOPPING_QUERY",
-            assistant_reply=audit_data["display_answer"],
-            item_name=audit_data["item"],
-            amount=audit_data["price"],
-            audit_data=audit_data,
-        )
-        reload_history_sessions()
-        global_pure_async_notify(
-            None,
-            None,
-            (
-                f"### Jerry-Insight 审计结果已生成\n\n"
-                f"- 用户问题：`{query_text}`\n"
-                f"- 商品目标：`{audit_data['item']}`\n"
-                f"- 预估金额：`{audit_data['price']}` 元\n\n"
-                f"{audit_data['display_answer'][:1200]}"
-            ),
-        )
-        st.session_state['SUBMIT_PROCESSING'] = False
-        st.rerun()
-    else:
-        ask_msg_content = (
+    ask_msg_content = (
         f"### 🔍 省钱智探agent捕获新审计提问\n\n"
         f"--- \n\n"
         f"👤 **用户输入原始问题**：\"{query_text}\"\n\n"
@@ -811,18 +602,10 @@ if st.session_state.get("PENDING_QUERY") or (chat_query and chat_query.strip()):
             
             if raw_answer == "INVALID_INTENT":
                 status.update(label="🚨 监测到非业务输入。", state="error", expanded=False)
-                st.session_state["LAST_AUDIT"] = {
-                    "price": 0.0,
-                    "item": query_text,
-                    "display_answer": "### 没有进入商品审计\n\n这句话暂时没有被系统识别成商品购买请求。你可以试试：我想买可乐，帮我看看值不值。",
-                    "info_blocks": [],
-                    "price_table_data": [],
-                    "crawler_results": [],
-                    "long_term_context": "",
-                    "read_only": True,
-                }
+                st.error("请输入有效的业务商品进行审计. ")
                 st.session_state['SUBMIT_PROCESSING'] = False
-                st.rerun()
+                st.session_state["active_query"] = None
+                st.stop()
                 
             status.update(label="🚀 FSM 流程闭合！情报与定向爬虫数据同步完毕！", state="complete", expanded=False)
             
@@ -884,41 +667,16 @@ if st.session_state.get("PENDING_QUERY") or (chat_query and chat_query.strip()):
                 audit_data=st.session_state['LAST_AUDIT'],
             )
             reload_history_sessions()
-            global_pure_async_notify(
-                None,
-                None,
-                (
-                    f"### Jerry-Insight 审计结果已生成\n\n"
-                    f"- 用户问题：`{query_text}`\n"
-                    f"- 商品目标：`{clean_keyword}`\n"
-                    f"- 预估金额：`{detected_price}` 元\n\n"
-                    f"{final_display_text[:1200]}"
-                ),
-            )
             
         except Exception as e:
             status.update(label=f"❌ 流程运行异常: {str(e)}", state="error", expanded=False)
-            print(f"Shopping flow error for query={query_text}: {e}")
-            st.session_state["LAST_AUDIT"] = {
-                "price": 0.0,
-                "item": query_text,
-                "display_answer": (
-                    "### 审计流程中断\n\n"
-                    f"系统已经收到你的问题：`{query_text}`，但后续搜索/审计流程出现异常。\n\n"
-                    f"错误信息：`{e}`\n\n"
-                    "你可以换个更短的商品名再试一次，比如：可乐、雪碧、拍立得。"
-                ),
-                "info_blocks": [],
-                "price_table_data": [],
-                "crawler_results": [],
-                "long_term_context": "",
-                "read_only": True,
-            }
+            st.error(f"引擎报错: {e}")
             st.session_state['SUBMIT_PROCESSING'] = False
-            # Keep the fallback result visible in this run instead of flashing away.
+            st.session_state["active_query"] = None
+            st.stop()
             
     st.session_state['SUBMIT_PROCESSING'] = False
-    # Let the result renderer below consume LAST_AUDIT in the same Streamlit run.
+    st.rerun()
 
 
 # ==========================================================
@@ -926,16 +684,7 @@ if st.session_state.get("PENDING_QUERY") or (chat_query and chat_query.strip()):
 # ==========================================================
 main_ui_container = st.empty()
 
-if st.session_state['LAST_AUDIT'] and st.session_state["active_query"] and st.session_state['LAST_AUDIT'].get("read_only"):
-    audit_data = st.session_state['LAST_AUDIT']
-    with main_ui_container.container():
-        with st.chat_message("user"):
-            st.write(st.session_state["active_query"])
-        with st.chat_message("assistant"):
-            st.markdown(audit_data.get("display_answer") or "这条历史记录没有可显示的回复。")
-            st.caption("这条记录已经处理完成，可以继续在下方输入新问题。")
-
-elif st.session_state['LAST_AUDIT'] and st.session_state["active_query"]:
+if st.session_state['LAST_AUDIT'] and st.session_state["active_query"]:
     audit_data = st.session_state['LAST_AUDIT']
     
     with main_ui_container.container():
@@ -943,10 +692,10 @@ elif st.session_state['LAST_AUDIT'] and st.session_state["active_query"]:
             st.write(st.session_state["active_query"])
             
         with st.chat_message("assistant"):
+            st.markdown("### 🌐 Jerry-Scout 全网核心情报来源与存证链接")
             if audit_data.get("read_only"):
                 st.markdown(audit_data.get("display_answer") or "这条历史记录没有可显示的回复。")
-                st.caption("这条记录已经处理完成，可以继续在下方输入新问题。")
-            st.markdown("### 🌐 Jerry-Scout 全网核心情报来源与存证链接")
+                st.stop()
             blocks = audit_data["info_blocks"]
             for idx in range(4):
                 if blocks and idx < len(blocks):
@@ -990,7 +739,7 @@ elif st.session_state['LAST_AUDIT'] and st.session_state["active_query"]:
         is_insufficient = dynamic_profile['current_surplus'] < audit_data['price']
         expected_surplus = round(dynamic_profile['current_surplus'] - audit_data['price'], 2)
         
-        buttons_disabled = st.session_state['ACTION_COMPLETED'] or audit_data.get("read_only", False)
+        buttons_disabled = st.session_state['ACTION_COMPLETED']
         
         with col1:
             if is_insufficient:

@@ -29,12 +29,6 @@ SHOPPING_PATTERNS = [
     "报价", "划算", "优惠",
 ]
 
-COMMON_PRODUCT_TERMS = [
-    "可乐", "雪碧", "芬达", "饮料", "矿泉水", "咖啡", "奶茶", "茶",
-    "耳机", "手机", "电脑", "键盘", "鼠标", "相机", "无人机", "充电器",
-    "书", "衣服", "鞋", "包", "零食", "泡面", "纸巾",
-]
-
 DIRECT_EXPENSE_PATTERNS = [
     re.compile(
         r"(?:我|俺|刚刚|刚才|今天|昨天|已经)?\s*"
@@ -111,9 +105,6 @@ def classify_user_intent(query: str) -> ParsedIntent:
         return ParsedIntent(intent="HELP_OR_META", reply=GUIDE_REPLY)
 
     if any(p in lowered or p in text for p in SHOPPING_PATTERNS):
-        return ParsedIntent(intent="SHOPPING_QUERY")
-
-    if any(term in text for term in COMMON_PRODUCT_TERMS):
         return ParsedIntent(intent="SHOPPING_QUERY")
 
     return ParsedIntent(
