@@ -130,6 +130,8 @@ if 'ASYNC_EXECUTOR' not in st.session_state:
 def global_pure_async_notify(ding_token, wx_token, content):
     """ 异步推送核心：扔进线程池，杜绝因网络延迟导致的前端卡顿 """
     title = "资产动态调整"
+    if 'ASYNC_EXECUTOR' in st.session_state:
+        return st.session_state['ASYNC_EXECUTOR'].submit(send_dingtalk_background, title, content)
     return send_dingtalk_background(title, content)
 
 FILE_LOCK = threading.Lock()
@@ -367,15 +369,16 @@ class JerryAgentHarness:
 def run_fsm_scout_pipeline(query, status_widget):
     fsm = JerryFSMAgent()
     fsm.transition_to("INTENT_CHECK")
-    routed_intent = classify_intent(query)
-    if routed_intent == "INVALID" and classify_user_intent(query).intent != "SHOPPING_QUERY":
+    if classify_user_intent(query).intent != "SHOPPING_QUERY":
         fsm.transition_to("END")
         return "INVALID_INTENT", None, None, None, None, ""
 
     fsm.transition_to("PRICE_SCOUT")
-    clean_keyword = clean_query_to_entity(query)
+    clean_keyword = fallback_clean_query_to_entity(query)
     if clean_keyword == "NONE":
-        clean_keyword = fallback_clean_query_to_entity(query)
+        clean_keyword = clean_query_to_entity(query)
+    if clean_keyword == "NONE":
+        clean_keyword = query.strip()
     
     future_memory = st.session_state['ASYNC_EXECUTOR'].submit(hybrid_retriever.retrieve_and_rerank, query)
     future_web = st.session_state['ASYNC_EXECUTOR'].submit(web_search_pro, clean_keyword)
