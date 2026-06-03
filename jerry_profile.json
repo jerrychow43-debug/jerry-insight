@@ -1,7 +1,7 @@
 {
     "user_name": "Jerry",
     "monthly_budget": 2000.0,
-    "current_surplus": 950.0,
+    "current_surplus": 10000.0,
     "fixed_expenses": {
         "饮食": 1200,
         "话费交通": 300
