@@ -522,6 +522,10 @@ if st.session_state.get("just_recorded"):
     st.toast(st.session_state["just_recorded"], icon="🪙")
     st.session_state["just_recorded"] = None
 
+# 兜底释放直接记账或异常流程留下的输入锁
+if st.session_state.get('SUBMIT_PROCESSING') and st.session_state.get("active_query") is None:
+    st.session_state['SUBMIT_PROCESSING'] = False
+
 # 对话框管理
 chat_query = st.chat_input("输入商品名称，开始资产风控审计...", key="user_chat_input_core_key", disabled=st.session_state['SUBMIT_PROCESSING'])
 
@@ -536,6 +540,25 @@ if st.session_state['SUBMIT_PROCESSING'] and st.session_state["active_query"] is
 # 拦截 chat_input 的真实提交事件
 if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING']:
     query_text = chat_query.strip()
+
+    direct_accounting = parse_direct_accounting_input(query_text)
+    if direct_accounting:
+        st.session_state["active_query"] = None
+        st.session_state['LAST_AUDIT'] = None
+        st.session_state['ACTION_COMPLETED'] = False
+        st.session_state["chat_history"].append({"role": "user", "content": query_text})
+        try:
+            execute_direct_accounting(query_text, direct_accounting["item"], direct_accounting["price"])
+        except Exception as direct_err:
+            st.session_state["just_recorded"] = f"直接记账失败：{direct_err}"
+            print(f"直接记账失败: {direct_err}")
+        finally:
+            st.session_state['SUBMIT_PROCESSING'] = False
+            st.session_state["active_query"] = None
+            st.session_state["LAST_AUDIT"] = None
+            st.session_state["ACTION_COMPLETED"] = False
+        st.rerun()
+
     st.session_state['SUBMIT_PROCESSING'] = True
     st.session_state["active_query"] = query_text
     st.session_state['LAST_AUDIT'] = None  # 强清旧账单缓存
@@ -543,17 +566,6 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
     
     # 🔄 【新增】：实时追加短期多轮会话的 User 视角
     st.session_state["chat_history"].append({"role": "user", "content": query_text})
-
-    direct_accounting = parse_direct_accounting_input(query_text)
-    if direct_accounting:
-        try:
-            execute_direct_accounting(query_text, direct_accounting["item"], direct_accounting["price"])
-        finally:
-            st.session_state['SUBMIT_PROCESSING'] = False
-            st.session_state["active_query"] = None
-            st.session_state["LAST_AUDIT"] = None
-            st.session_state["ACTION_COMPLETED"] = False
-        st.rerun()
     
     ask_msg_content = (
         f"### 🔍 省钱智探agent捕获新审计提问\n\n"
