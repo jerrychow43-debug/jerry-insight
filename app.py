@@ -9,7 +9,7 @@ import pandas as pd
 import streamlit as st
 import requests  
 from openai import OpenAI
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
 # =====================================================================
 # 🔒 1. 全局配置与环境初始化
@@ -302,7 +302,7 @@ class JerryAgentHarness:
             step += 1
             try:
                 if status_widget: status_widget.write(f"🧠 [Harness 状态机] 推理寻优中 ({step}/{self.max_steps})...")
-                response = self.client.chat.completions.create(model=self.model, messages=conversation_history, temperature=0.3)
+                response = self.client.chat.completions.create(model=self.model, messages=conversation_history, temperature=0.3, timeout=20)
                 raw_output = response.choices[0].message.content.strip()
                 
                 if raw_output.startswith("```json"):
@@ -330,7 +330,7 @@ class JerryAgentHarness:
             try:
                 if status_widget: status_widget.write("⚠️ 触发布局收敛机制，正在强行清算账目并生成终报...")
                 conversation_history.append({"role": "user", "content": "注意：时间到！请立刻停止任何 Call_Web_Search 动作。基于你目前掌握的所有情报与会话上下文，直接以 Final Answer 的 JSON 格式输出最终审计报告！"})
-                final_res = self.client.chat.completions.create(model=self.model, messages=conversation_history, temperature=0.2)
+                final_res = self.client.chat.completions.create(model=self.model, messages=conversation_history, temperature=0.2, timeout=20)
                 raw_output = final_res.choices[0].message.content.strip()
                 
                 if raw_output.startswith("```"): 
@@ -383,11 +383,22 @@ def run_fsm_scout_pipeline(query, status_widget):
         if not existing_data or not existing_data.get("ids") or len(existing_data["ids"]) == 0:
             long_term_context = "暂无历史档案存证。"
         else:
-            long_term_context = future_memory.result()
+            long_term_context = future_memory.result(timeout=4)
     except Exception as chroma_err:
         long_term_context = "历史档案加载隔离状态。" 
 
-    raw_info_blocks, raw_info_text, price_table_data = future_web.result()
+    try:
+        raw_info_blocks, raw_info_text, price_table_data = future_web.result(timeout=8)
+    except TimeoutError:
+        print(f"web search timed out for query={clean_keyword}")
+        raw_info_blocks = []
+        raw_info_text = f"实时搜索超时，已使用本地兜底情报继续审计：{clean_keyword}"
+        price_table_data = []
+    except Exception as web_err:
+        print(f"web search failed for query={clean_keyword}: {web_err}")
+        raw_info_blocks = []
+        raw_info_text = f"实时搜索失败，已使用本地兜底情报继续审计：{clean_keyword}"
+        price_table_data = []
     
     crawler_results = None
     try:
