@@ -307,6 +307,62 @@ def record_direct_expense(item_name, amount, source_query=""):
     )
     return reply, profile
 
+
+def is_cloud_runtime():
+    return os.path.exists("/mount/src/jerry-insight") or bool(os.getenv("STREAMLIT_RUNTIME_ENV"))
+
+
+def estimate_cloud_price(item_name):
+    text = (item_name or "").lower()
+    cheap_terms = ["可乐", "雪碧", "芬达", "饮料", "矿泉水", "水", "cola", "零食", "泡面"]
+    if any(term in text for term in cheap_terms):
+        return 3.0
+    if any(term in text for term in ["奶茶", "咖啡"]):
+        return 18.0
+    if any(term in text for term in ["拍立得", "相机"]):
+        return 599.0
+    if any(term in text for term in ["手机", "iphone"]):
+        return 3999.0
+    if any(term in text for term in ["电脑", "笔记本"]):
+        return 5999.0
+    if any(term in text for term in ["耳机", "键盘", "鼠标", "充电器"]):
+        return 199.0
+    return 99.0
+
+
+def build_cloud_audit(query_text):
+    clean_keyword = fallback_clean_query_to_entity(query_text)
+    if clean_keyword == "NONE":
+        clean_keyword = query_text.strip()
+    detected_price = estimate_cloud_price(clean_keyword)
+    profile = get_dynamic_profile()
+    expected_surplus = round(float(profile.get("current_surplus", 0)) - detected_price, 2)
+    if expected_surplus < 0:
+        suggestion = "建议先别买。当前预算不够，这笔消费会让余额变成负数。"
+    elif detected_price <= 20:
+        suggestion = "金额不高，可以买；如果这是冲动购买，也可以先放购物车冷静一下。"
+    else:
+        suggestion = "建议先比价或等优惠。确认确实需要以后，再点下面的确认记账。"
+    display_answer = (
+        f"### {clean_keyword} 购买审计\n\n"
+        f"- 预估价格：{detected_price:g} 元\n"
+        f"- 当前余额：{profile.get('current_surplus')} 元\n"
+        f"- 买完预计剩余：{expected_surplus:g} 元\n\n"
+        f"{suggestion}\n\n"
+        "如果你已经买了并且价格确定，也可以直接说：买了这个花了多少元。"
+    )
+    return {
+        "price": detected_price,
+        "item": clean_keyword,
+        "display_answer": display_answer,
+        "info_blocks": [],
+        "price_table_data": [
+            {"渠道": "云端快速估算", "报价": f"{detected_price:g} 元", "说明": "稳定模式，避免云端长流程卡住"}
+        ],
+        "crawler_results": [],
+        "long_term_context": "云端快速模式：已先给出可操作建议，并保留确认记账按钮。",
+    }
+
 api_key = st.secrets.get("DEEPSEEK_API_KEY", os.getenv("DEEPSEEK_API_KEY", ""))
 base_url = st.secrets.get("DEEPSEEK_BASE_URL", os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"))
 openai_client = OpenAI(api_key=api_key, base_url=base_url)
@@ -712,7 +768,34 @@ if st.session_state.get("PENDING_QUERY") or (chat_query and chat_query.strip()):
         st.session_state["just_recorded"] = f"已扣除 {parsed_intent.item_name} {float(parsed_intent.amount):g} 元"
         st.rerun()
     
-    ask_msg_content = (
+    if is_cloud_runtime():
+        audit_data = build_cloud_audit(query_text)
+        st.session_state["LAST_AUDIT"] = audit_data
+        st.session_state["chat_history"].append({"role": "assistant", "content": audit_data["display_answer"]})
+        save_chat_history(
+            query_text,
+            "SHOPPING_QUERY",
+            assistant_reply=audit_data["display_answer"],
+            item_name=audit_data["item"],
+            amount=audit_data["price"],
+            audit_data=audit_data,
+        )
+        reload_history_sessions()
+        global_pure_async_notify(
+            None,
+            None,
+            (
+                f"### Jerry-Insight 审计结果已生成\n\n"
+                f"- 用户问题：`{query_text}`\n"
+                f"- 商品目标：`{audit_data['item']}`\n"
+                f"- 预估金额：`{audit_data['price']}` 元\n\n"
+                f"{audit_data['display_answer'][:1200]}"
+            ),
+        )
+        st.session_state['SUBMIT_PROCESSING'] = False
+        st.rerun()
+    else:
+        ask_msg_content = (
         f"### 🔍 省钱智探agent捕获新审计提问\n\n"
         f"--- \n\n"
         f"👤 **用户输入原始问题**：\"{query_text}\"\n\n"
