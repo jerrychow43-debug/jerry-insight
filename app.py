@@ -245,6 +245,62 @@ def execute_undo_last_expense(query_text):
     )
     return target_entry
 
+def parse_refund_input(text):
+    normalized = text.strip()
+    if not any(word in normalized for word in ["加回来", "加回", "退回", "补回", "返还", "退钱", "退了"]):
+        return None
+
+    amount_match = re.search(r'[￥¥]?\s*(\d+(?:\.\d+)?)\s*(?:元|块|块钱|rmb|RMB)', normalized)
+    if not amount_match:
+        return None
+
+    amount = round(float(amount_match.group(1)), 2)
+    item_text = normalized
+    item_text = re.sub(r'[￥¥]?\s*\d+(?:\.\d+)?\s*(?:元|块|块钱|rmb|RMB)', '', item_text)
+    item_text = re.sub(r'(加回来|加回|退回|补回|返还|退钱|退了|给我|把|余额)', '', item_text)
+    item_text = re.sub(r'[，。,.\s]+', '', item_text)
+    item_text = item_text or "余额修正"
+    return {"item": item_text, "amount": amount}
+
+def execute_refund_adjustment(query_text, item, amount):
+    profile = get_dynamic_profile()
+    profile["current_surplus"] = round(profile["current_surplus"] + amount, 2)
+    with open(PROFILE_FILE, "w", encoding="utf-8") as f:
+        json.dump(profile, f, ensure_ascii=False, indent=4)
+
+    entries = load_ledger_entries()
+    entries.append({
+        "id": f"refund_{int(time.time())}_{len(entries) + 1}",
+        "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+        "item": item,
+        "amount": round(float(amount), 2),
+        "source": "manual_refund",
+        "raw_query": query_text,
+        "status": "refund"
+    })
+    save_ledger_entries(entries)
+
+    display_answer = (
+        f"✅ 已加回余额：【{item}】 **{amount} 元**。\n\n"
+        f"💳 当前卡内剩余流动资金：**{profile['current_surplus']} 元**。"
+    )
+    st.session_state["quick_reply"] = {"query": query_text, "reply": display_answer}
+    st.session_state["chat_history"].append({"role": "assistant", "content": display_answer})
+    st.session_state["just_recorded"] = f"✅ 已加回余额：{amount} 元。"
+
+    global_pure_async_notify(
+        None,
+        None,
+        (
+            f"### Jerry-Insight 余额加回成功\n\n"
+            f"- 修正项目：`{item}`\n"
+            f"- 加回金额：`{amount}` 元\n"
+            f"- 当前余额：`{profile['current_surplus']}` 元\n"
+            f"- 修正时间：`{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}`"
+        )
+    )
+    return {"item": item, "amount": amount}
+
 def parse_direct_accounting_input(text):
     """识别“已经买了并花了多少钱”的输入；想买/问价不走这里。"""
     normalized = text.strip()
@@ -705,6 +761,27 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
             st.session_state["quick_reply"] = {"query": query_text, "reply": reply}
             st.session_state["just_recorded"] = reply
             print(f"撤销上一笔失败: {undo_err}")
+        finally:
+            st.session_state['SUBMIT_PROCESSING'] = False
+            st.session_state["active_query"] = None
+            st.session_state["LAST_AUDIT"] = None
+            st.session_state["ACTION_COMPLETED"] = False
+        st.rerun()
+
+    refund_adjustment = parse_refund_input(query_text)
+    if refund_adjustment:
+        st.session_state["active_query"] = None
+        st.session_state['LAST_AUDIT'] = None
+        st.session_state['ACTION_COMPLETED'] = False
+        st.session_state["quick_reply"] = None
+        st.session_state["chat_history"].append({"role": "user", "content": query_text})
+        try:
+            execute_refund_adjustment(query_text, refund_adjustment["item"], refund_adjustment["amount"])
+        except Exception as refund_err:
+            reply = f"加回余额失败：{refund_err}"
+            st.session_state["quick_reply"] = {"query": query_text, "reply": reply}
+            st.session_state["just_recorded"] = reply
+            print(f"加回余额失败: {refund_err}")
         finally:
             st.session_state['SUBMIT_PROCESSING'] = False
             st.session_state["active_query"] = None
