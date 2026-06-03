@@ -56,7 +56,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # 🤖 【钉钉通道安全注入】
-DINGTALK_WEBHOOK = "https://oapi.dingtalk.com/robot/send?access_token=2f4f18adb7a69d71e3faa1e90879d6987c75cbb16b6a7c10fe870b4e9a051c0c"
+DINGTALK_WEBHOOK = st.secrets.get("DINGTALK_WEBHOOK", os.getenv("DINGTALK_WEBHOOK", ""))
 
 def send_dingtalk_worker_sync(title, markdown_content):
     if not DINGTALK_WEBHOOK:
