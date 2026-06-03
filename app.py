@@ -25,6 +25,8 @@ if 'LAST_AUDIT' not in st.session_state:
     st.session_state['LAST_AUDIT'] = None
 if 'SUBMIT_PROCESSING' not in st.session_state:
     st.session_state['SUBMIT_PROCESSING'] = False
+if 'PENDING_QUERY' not in st.session_state:
+    st.session_state['PENDING_QUERY'] = None
 # 🛠️ 用于记录当前这笔账单是否已经做出决策（点击过按钮）
 if 'ACTION_COMPLETED' not in st.session_state:
     st.session_state['ACTION_COMPLETED'] = False
@@ -648,8 +650,15 @@ if st.session_state['SUBMIT_PROCESSING'] and st.session_state["active_query"] is
         st.session_state["active_query"] = target_query
 
 # 拦截 chat_input 的真实提交事件
-if chat_query and chat_query.strip():
-    query_text = chat_query.strip()
+if st.session_state.get("PENDING_QUERY") or (chat_query and chat_query.strip()):
+    if chat_query and chat_query.strip() and not st.session_state.get("PENDING_QUERY"):
+        st.session_state["PENDING_QUERY"] = chat_query.strip()
+        st.session_state["active_query"] = chat_query.strip()
+        st.session_state['LAST_AUDIT'] = None
+        st.session_state['ACTION_COMPLETED'] = False
+        st.rerun()
+
+    query_text = st.session_state.pop("PENDING_QUERY", None) or (chat_query.strip() if chat_query else "")
     st.session_state['SUBMIT_PROCESSING'] = True
     st.session_state["active_query"] = query_text
     st.session_state['LAST_AUDIT'] = None  # 强清旧账单缓存
