@@ -759,7 +759,7 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
             st.rerun()
             
     st.session_state['SUBMIT_PROCESSING'] = False
-    st.rerun()
+    # Keep the completed audit visible in this same run instead of flashing away.
 
 
 # ==========================================================
