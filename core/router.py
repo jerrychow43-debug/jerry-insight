@@ -7,6 +7,25 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.brain import ask_llm
 
+
+def fallback_clean_query_to_entity(query: str) -> str:
+    """Deterministic fallback when the LLM extractor is unavailable or too strict."""
+    if not query:
+        return "NONE"
+
+    clean_keyword = query.strip()
+    stop_phrases = [
+        "我想买", "想买", "想入", "想入手", "帮我看看", "帮我看下", "看看",
+        "值不值得", "值不值", "能买吗", "买不买", "贵不贵", "多少钱",
+        "价格", "比价", "推荐", "评测一下", "评测", "测评", "有没有人",
+        "有没有", "有人买过", "好不好", "怎么样", "便宜不", "划算不",
+    ]
+    for phrase in stop_phrases:
+        clean_keyword = clean_keyword.replace(phrase, " ")
+    clean_keyword = re.sub(r"[^\w\s\u4e00-\u9fa5]", " ", clean_keyword)
+    clean_keyword = re.sub(r"\s+", " ", clean_keyword).strip()
+    return clean_keyword[:40] if clean_keyword else "NONE"
+
 def classify_intent(query):
     """
     意图识别：防止 Agent 乱跑。
@@ -77,15 +96,10 @@ def clean_query_to_entity(query: str) -> str:
         # 2. 拦截安全阀：将长度限制放宽到 24 字符。
         # 很多商品带上型号和规格（例如：MacBook Pro 16寸 M3）很容易超过12个字，改为24更安全。
         if "NONE" in entity.upper() or "失败" in entity or len(entity) > 24:
-            return "NONE"
+            return fallback_clean_query_to_entity(query)
             
         return entity
     except Exception as e:
         print(f"⚠️ [提取商品实体异常] 降级处理: {e}")
         # 如果大模型崩了，用基础正则兜底
-        stop_phrases = ["我想买", "有人买过", "怎么样", "好不好", "求推荐", "评测一下", "有没有人", "想入一个", "测评", "入手"]
-        clean_keyword = query
-        for phrase in stop_phrases:
-            clean_keyword = clean_keyword.replace(phrase, "")
-        clean_keyword = re.sub(r'[^\w\s\u4e00-\u9fa5]', '', clean_keyword).strip()
-        return clean_keyword if len(clean_keyword) <= 24 else "NONE"
+        return fallback_clean_query_to_entity(query)

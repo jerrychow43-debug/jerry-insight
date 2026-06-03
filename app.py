@@ -42,7 +42,7 @@ if "history_sessions" not in st.session_state:
 # 🛠️ 2. 核心底层组件引入与环境配置对齐
 # =====================================================================
 from bs4 import BeautifulSoup  
-from core.router import classify_intent, clean_query_to_entity
+from core.router import classify_intent, clean_query_to_entity, fallback_clean_query_to_entity
 from core.intent_plus import classify_user_intent
 from core.memory_manager import AdvancedMemoryManager
 from core.hybrid_retriever import JaccardHybridRetriever
@@ -367,12 +367,15 @@ class JerryAgentHarness:
 def run_fsm_scout_pipeline(query, status_widget):
     fsm = JerryFSMAgent()
     fsm.transition_to("INTENT_CHECK")
-    if classify_intent(query) == "INVALID":
+    routed_intent = classify_intent(query)
+    if routed_intent == "INVALID" and classify_user_intent(query).intent != "SHOPPING_QUERY":
         fsm.transition_to("END")
         return "INVALID_INTENT", None, None, None, None, ""
 
     fsm.transition_to("PRICE_SCOUT")
     clean_keyword = clean_query_to_entity(query)
+    if clean_keyword == "NONE":
+        clean_keyword = fallback_clean_query_to_entity(query)
     
     future_memory = st.session_state['ASYNC_EXECUTOR'].submit(hybrid_retriever.retrieve_and_rerank, query)
     future_web = st.session_state['ASYNC_EXECUTOR'].submit(web_search_pro, clean_keyword)
