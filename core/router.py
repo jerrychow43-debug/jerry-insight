@@ -5,7 +5,9 @@ import os
 # ✨ 动态确保项目根目录在 Python 搜索路径第一位
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.brain import ask_llm
+def _ask_llm(messages):
+    from core.brain import ask_llm
+    return ask_llm(messages)
 
 def classify_intent(query):
     """
@@ -25,7 +27,7 @@ def classify_intent(query):
     """
     
     # 调用大脑进行分类
-    res = ask_llm([{"role": "user", "content": prompt}])
+    res = _ask_llm([{"role": "user", "content": prompt}])
     
     # 工业级防崩漏洞修复：如果大脑里返回了“失败”，说明 Key 或网络挂了，为了不拦住 Jerry，直接强行放行！
     if "大脑连接失败" in res:
@@ -71,7 +73,7 @@ def clean_query_to_entity(query: str) -> str:
     """
     
     try:
-        res = ask_llm([{"role": "user", "content": prompt}])
+        res = _ask_llm([{"role": "user", "content": prompt}])
         entity = res.strip().replace('"', '').replace("'", "")
         
         # 2. 拦截安全阀：将长度限制放宽到 24 字符。

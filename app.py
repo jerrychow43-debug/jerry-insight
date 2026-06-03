@@ -41,16 +41,47 @@ if "history_sessions" not in st.session_state:
 from bs4 import BeautifulSoup  
 from core.router import classify_intent, clean_query_to_entity
 from core.intent_plus import classify_user_intent
-from core.memory_manager import AdvancedMemoryManager
 from core.hybrid_retriever import JaccardHybridRetriever
-from tools.mcp_server import JerryMcpServer
 
-from core.brain import ask_llm
-from tools.search import web_search_pro
-from tools.price_crawler import crawl_smzdm_price      
-from core.jerry_fsm_agent import JerryFSMAgent      
 from data.sql_db import init_runtime_tables, load_recent_chat_history, save_audit_log, save_chat_history, save_notification_log
 from dotenv import load_dotenv
+
+try:
+    from core.memory_manager import AdvancedMemoryManager
+except KeyError as import_err:
+    print(f"Memory manager hot-reload import failed, using local fallback: {import_err}")
+
+    class AdvancedMemoryManager:
+        def __init__(self, client, max_turns: int = 3):
+            self.client = client
+            self.max_turns = max_turns
+            self.short_term_memory = []
+
+        def add_message(self, role: str, content: str):
+            self.short_term_memory.append({"role": role, "content": content})
+            self.short_term_memory = self.short_term_memory[-(self.max_turns * 2):]
+
+        def get_compiled_context(self) -> str:
+            lines = ["【近期临近会话上下文】"]
+            for msg in self.short_term_memory:
+                role_tag = "用户" if msg["role"] == "user" else "铁算盘"
+                lines.append(f"- {role_tag}: {msg['content']}")
+            return "\n".join(lines)
+
+
+def safe_web_search_pro(keyword):
+    from tools.search import web_search_pro
+    return web_search_pro(keyword)
+
+
+def safe_crawl_smzdm_price(keyword):
+    from tools.price_crawler import crawl_smzdm_price
+    return crawl_smzdm_price(keyword)
+
+
+def create_fsm_agent():
+    from core.jerry_fsm_agent import JerryFSMAgent
+    return JerryFSMAgent()
 
 load_dotenv()
 init_runtime_tables()
@@ -288,7 +319,7 @@ class JerryAgentHarness:
                 elif parsed_json.get("action") == "Call_Web_Search":
                     search_kw = parsed_json.get("action_input")
                     if status_widget: status_widget.write(f"🔍 触发多路追查，深度搜索: `{search_kw}`...")
-                    _, search_feedback_text, _ = web_search_pro(search_kw)
+                    _, search_feedback_text, _ = safe_web_search_pro(search_kw)
                     conversation_history.append({"role": "assistant", "content": raw_output})
                     conversation_history.append({"role": "user", "content": f"【追查情报反馈】：\n{search_feedback_text[:1200]}"})
             except Exception as e:
@@ -334,7 +365,7 @@ class JerryAgentHarness:
 # 👑 4. FSM 状态机托管管道
 # ==========================================================
 def run_fsm_scout_pipeline(query, status_widget):
-    fsm = JerryFSMAgent()
+    fsm = create_fsm_agent()
     fsm.transition_to("INTENT_CHECK")
     if classify_intent(query) == "INVALID":
         fsm.transition_to("END")
@@ -344,8 +375,8 @@ def run_fsm_scout_pipeline(query, status_widget):
     clean_keyword = clean_query_to_entity(query)
     
     future_memory = st.session_state['ASYNC_EXECUTOR'].submit(hybrid_retriever.retrieve_and_rerank, query)
-    future_web = st.session_state['ASYNC_EXECUTOR'].submit(web_search_pro, clean_keyword)
-    future_crawler = st.session_state['ASYNC_EXECUTOR'].submit(crawl_smzdm_price, clean_keyword)
+    future_web = st.session_state['ASYNC_EXECUTOR'].submit(safe_web_search_pro, clean_keyword)
+    future_crawler = st.session_state['ASYNC_EXECUTOR'].submit(safe_crawl_smzdm_price, clean_keyword)
     
     try:
         existing_data = memory_collection.get()
