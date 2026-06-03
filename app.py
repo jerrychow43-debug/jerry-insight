@@ -192,7 +192,11 @@ def append_ledger_entry(item, price, source, raw_query):
 
 def is_undo_request(text):
     normalized = text.strip()
-    undo_words = ["撤销上一笔", "撤销上次", "撤销刚才", "退回上一笔", "取消上一笔", "上一笔记错了"]
+    undo_words = [
+        "撤销上一笔", "撤销上一条", "撤销上次", "撤销刚才",
+        "退回上一笔", "退回上一条", "取消上一笔", "取消上一条",
+        "上一笔记错了", "上一条记错了", "加错了"
+    ]
     return any(word in normalized for word in undo_words)
 
 def execute_undo_last_expense(query_text):
