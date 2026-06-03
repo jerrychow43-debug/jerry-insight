@@ -28,6 +28,8 @@ if 'SUBMIT_PROCESSING' not in st.session_state:
 # 🛠️ 用于记录当前这笔账单是否已经做出决策（点击过按钮）
 if 'ACTION_COMPLETED' not in st.session_state:
     st.session_state['ACTION_COMPLETED'] = False
+if "quick_reply" not in st.session_state:
+    st.session_state["quick_reply"] = None
 
 # 🔄 【新增】初始化多轮对话上下文与侧边栏历史归档
 if "chat_history" not in st.session_state:
@@ -173,6 +175,27 @@ def parse_direct_accounting_input(text):
     item_text = re.sub(r'[，。,.\s]+', '', item_text)
     item_text = item_text or "未命名消费"
     return {"item": item_text, "price": price}
+
+def get_general_reply(text):
+    normalized = text.strip().lower()
+    help_words = ["怎么用", "如何使用", "使用方法", "你能干嘛", "能做什么", "帮助", "help", "说明", "功能", "教程"]
+    greeting_words = ["你好", "hello", "hi", "在吗", "早上好", "晚上好"]
+    thanks_words = ["谢谢", "谢了", "thanks", "thank you"]
+
+    guide = (
+        "我可以帮你做三件事：\n\n"
+        "1. 想买东西时，直接说：`我想买可乐`、`帮我看看 iPhone 15 值不值得买`。\n"
+        "2. 已经花钱时，直接说：`买了雪碧花了3块`，我会直接记账扣钱。\n"
+        "3. 出结果后，你可以点确认记账或放弃购买，我也会同步发钉钉通知。"
+    )
+
+    if any(word in normalized or word in text for word in help_words):
+        return guide
+    if any(word in normalized or word in text for word in greeting_words):
+        return f"我在。{guide}"
+    if any(word in normalized or word in text for word in thanks_words):
+        return "不客气。你可以继续输入想买的商品，或者直接说已经买了什么、花了多少钱。"
+    return None
 
 def execute_direct_accounting(query_text, item, price):
     profile = get_dynamic_profile()
@@ -579,6 +602,7 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
         st.session_state["active_query"] = None
         st.session_state['LAST_AUDIT'] = None
         st.session_state['ACTION_COMPLETED'] = False
+        st.session_state["quick_reply"] = None
         st.session_state["chat_history"].append({"role": "user", "content": query_text})
         try:
             execute_direct_accounting(query_text, direct_accounting["item"], direct_accounting["price"])
@@ -592,10 +616,21 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
             st.session_state["ACTION_COMPLETED"] = False
         st.rerun()
 
+    general_reply = get_general_reply(query_text)
+    if general_reply:
+        st.session_state["active_query"] = None
+        st.session_state['LAST_AUDIT'] = None
+        st.session_state['ACTION_COMPLETED'] = False
+        st.session_state["quick_reply"] = {"query": query_text, "reply": general_reply}
+        st.session_state["chat_history"].append({"role": "user", "content": query_text})
+        st.session_state["chat_history"].append({"role": "assistant", "content": general_reply})
+        st.rerun()
+
     st.session_state['SUBMIT_PROCESSING'] = True
     st.session_state["active_query"] = query_text
     st.session_state['LAST_AUDIT'] = None  # 强清旧账单缓存
     st.session_state['ACTION_COMPLETED'] = False # 重置按钮点击判定
+    st.session_state["quick_reply"] = None
     
     # 🔄 【新增】：实时追加短期多轮会话的 User 视角
     st.session_state["chat_history"].append({"role": "user", "content": query_text})
@@ -698,6 +733,13 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
 # 🎨 7. 纯静态前端渲染区与交互遮罩 management
 # ==========================================================
 main_ui_container = st.empty()
+
+if st.session_state.get("quick_reply"):
+    with main_ui_container.container():
+        with st.chat_message("user"):
+            st.write(st.session_state["quick_reply"]["query"])
+        with st.chat_message("assistant"):
+            st.markdown(st.session_state["quick_reply"]["reply"])
 
 if st.session_state['LAST_AUDIT'] and st.session_state["active_query"]:
     audit_data = st.session_state['LAST_AUDIT']
