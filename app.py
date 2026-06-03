@@ -30,6 +30,9 @@ if 'ACTION_COMPLETED' not in st.session_state:
     st.session_state['ACTION_COMPLETED'] = False
 
 # 🔄 【新增】初始化多轮对话上下文与侧边栏历史归档
+if st.session_state.get("SUBMIT_PROCESSING") and st.session_state.get("LAST_AUDIT"):
+    st.session_state["SUBMIT_PROCESSING"] = False
+
 if "chat_history" not in st.session_state:
     st.session_state["chat_history"] = []  # 结构: [{"role": "user/assistant", "content": "..."}]
 if "history_sessions" not in st.session_state:
@@ -90,6 +93,37 @@ def send_dingtalk_worker_sync(title, markdown_content):
         st.toast(f"⚠️ 钉钉网关网络异常: {e}", icon="📡")
         return {"errcode": -2, "errmsg": str(e)}
 
+def send_dingtalk_background(title, markdown_content):
+    if not DINGTALK_WEBHOOK:
+        save_notification_log("dingtalk", title, markdown_content, "failed", "No webhook url")
+        print("DINGTALK_WEBHOOK is missing.")
+        return {"errcode": -1, "errmsg": "No webhook url"}
+
+    headers = {"Content-Type": "application/json;charset=utf-8"}
+    full_title = f"Jerry-Insight - {title}"
+    markdown_content = f"省钱智探agent\n\n{markdown_content}"
+    data = {
+        "msgtype": "markdown",
+        "markdown": {
+            "title": full_title,
+            "text": f"## Jerry-Insight 实时通知\n\n{markdown_content}",
+        },
+    }
+    try:
+        response = requests.post(DINGTALK_WEBHOOK, data=json.dumps(data), headers=headers, timeout=10)
+        try:
+            res_json = response.json()
+        except Exception:
+            res_json = {"status_code": response.status_code, "text": response.text[:300]}
+        status = "success" if res_json.get("errcode") == 0 else "failed"
+        save_notification_log("dingtalk", full_title, markdown_content, status, json.dumps(res_json, ensure_ascii=False))
+        print(f"DingTalk notification {status}: {full_title}")
+        return res_json
+    except Exception as e:
+        save_notification_log("dingtalk", full_title, markdown_content, "error", str(e))
+        print(f"DingTalk notification error: {e}")
+        return {"errcode": -2, "errmsg": str(e)}
+
 if 'ASYNC_EXECUTOR' not in st.session_state:
     st.session_state['ASYNC_EXECUTOR'] = ThreadPoolExecutor(max_workers=8)
 
@@ -97,9 +131,9 @@ def global_pure_async_notify(ding_token, wx_token, content):
     """ 异步推送核心：扔进线程池，杜绝因网络延迟导致的前端卡顿 """
     title = "资产动态调整"
     if 'ASYNC_EXECUTOR' in st.session_state:
-        st.session_state['ASYNC_EXECUTOR'].submit(send_dingtalk_worker_sync, title, content)
+        st.session_state['ASYNC_EXECUTOR'].submit(send_dingtalk_background, title, content)
     else:
-        send_dingtalk_worker_sync(title, content)
+        send_dingtalk_background(title, content)
 
 FILE_LOCK = threading.Lock()
 PROFILE_FILE = "jerry_profile.json"
@@ -494,6 +528,7 @@ with st.sidebar:
             # 回溯历史的回调闭包函数
             def make_load_callback(s_data):
                 return lambda: [
+                    st.session_state.update({"SUBMIT_PROCESSING": False}),
                     st.session_state.update({"active_query": s_data["query"]}),
                     st.session_state.update({"LAST_AUDIT": s_data["audit_data"]}),
                     st.session_state.update({"ACTION_COMPLETED": True}) # 历史回顾默认锁死面板按钮
@@ -667,6 +702,17 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
                 audit_data=st.session_state['LAST_AUDIT'],
             )
             reload_history_sessions()
+            global_pure_async_notify(
+                None,
+                None,
+                (
+                    f"### Jerry-Insight 审计结果已生成\n\n"
+                    f"- 用户问题：`{query_text}`\n"
+                    f"- 商品目标：`{clean_keyword}`\n"
+                    f"- 预估金额：`{detected_price}` 元\n\n"
+                    f"{final_display_text[:1200]}"
+                ),
+            )
             
         except Exception as e:
             status.update(label=f"❌ 流程运行异常: {str(e)}", state="error", expanded=False)
