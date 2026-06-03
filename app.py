@@ -40,7 +40,6 @@ if "history_sessions" not in st.session_state:
 # =====================================================================
 from bs4 import BeautifulSoup  
 from core.router import classify_intent, clean_query_to_entity
-from core.intent_plus import classify_user_intent
 from core.memory_manager import AdvancedMemoryManager
 from core.hybrid_retriever import JaccardHybridRetriever
 from tools.mcp_server import JerryMcpServer
@@ -49,14 +48,13 @@ from core.brain import ask_llm
 from tools.search import web_search_pro
 from tools.price_crawler import crawl_smzdm_price      
 from core.jerry_fsm_agent import JerryFSMAgent      
-from data.sql_db import init_runtime_tables, load_recent_chat_history, save_audit_log, save_chat_history, save_notification_log
+from data.sql_db import save_audit_log
 from dotenv import load_dotenv
 
 load_dotenv()
-init_runtime_tables()
 
 # 🤖 【钉钉通道安全注入】
-DINGTALK_WEBHOOK = st.secrets.get("DINGTALK_WEBHOOK", os.getenv("DINGTALK_WEBHOOK", os.getenv("DING_WEBHOOK", "")))
+DINGTALK_WEBHOOK = "https://oapi.dingtalk.com/robot/send?access_token=2f4f18adb7a69d71e3faa1e90879d6987c75cbb16b6a7c10fe870b4e9a051c0c"
 
 def send_dingtalk_worker_sync(title, markdown_content):
     if not DINGTALK_WEBHOOK:
@@ -76,7 +74,6 @@ def send_dingtalk_worker_sync(title, markdown_content):
     try:
         response = requests.post(DINGTALK_WEBHOOK, data=json.dumps(data), headers=headers, timeout=10)
         res_json = response.json()
-        save_notification_log("dingtalk", full_title, markdown_content, "success" if res_json.get("errcode") == 0 else "failed", json.dumps(res_json, ensure_ascii=False))
         if res_json.get("errcode") == 0:
             st.toast("💥【钉钉推送成功】已顺利送达群聊！", icon="✅")
         else:
@@ -86,7 +83,6 @@ def send_dingtalk_worker_sync(title, markdown_content):
                 st.toast(f"❌【钉钉内部错误】: {res_json.get('errmsg')}", icon="🚨")
         return res_json
     except Exception as e:
-        save_notification_log("dingtalk", full_title if "full_title" in locals() else title, markdown_content, "error", str(e))
         st.toast(f"⚠️ 钉钉网关网络异常: {e}", icon="📡")
         return {"errcode": -2, "errmsg": str(e)}
 
@@ -117,46 +113,6 @@ def init_chroma_and_inject_profiles():
 memory_collection = init_chroma_and_inject_profiles()
 hybrid_retriever = JaccardHybridRetriever(memory_collection)
 
-def reload_history_sessions(limit=100):
-    sessions = []
-    for row in reversed(load_recent_chat_history(limit)):
-        audit_data = row.get("audit_data") or {}
-        if not audit_data and row.get("item_name"):
-            audit_data = {
-                "price": row.get("amount") or 0.0,
-                "item": row.get("item_name"),
-                "display_answer": row.get("assistant_reply") or "",
-                "info_blocks": [],
-                "price_table_data": [],
-                "crawler_results": [],
-                "long_term_context": "",
-            }
-        elif row.get("assistant_reply"):
-            audit_data = {
-                "price": row.get("amount") or 0.0,
-                "item": row.get("item_name") or row.get("intent") or "CHAT",
-                "display_answer": row.get("assistant_reply") or "",
-                "info_blocks": [],
-                "price_table_data": [],
-                "crawler_results": [],
-                "long_term_context": "",
-                "read_only": True,
-            }
-        if not audit_data:
-            continue
-        if audit_data.get("direct_expense"):
-            audit_data["read_only"] = True
-        audit_data.setdefault("display_answer", row.get("assistant_reply") or "")
-        audit_data.setdefault("info_blocks", [])
-        audit_data.setdefault("price_table_data", [])
-        audit_data.setdefault("crawler_results", [])
-        audit_data.setdefault("long_term_context", "")
-        sessions.append({"query": row["query"], "audit_data": audit_data})
-    st.session_state["history_sessions"] = sessions
-
-if not st.session_state["history_sessions"]:
-    reload_history_sessions()
-
 def get_dynamic_profile():
     with FILE_LOCK:
         if not os.path.exists(PROFILE_FILE):
@@ -166,56 +122,6 @@ def get_dynamic_profile():
             return default_profile
         with open(PROFILE_FILE, "r", encoding="utf-8") as f: 
             return json.load(f)
-
-
-def record_direct_expense(item_name, amount, source_query=""):
-    with FILE_LOCK:
-        if os.path.exists(PROFILE_FILE):
-            with open(PROFILE_FILE, "r", encoding="utf-8") as f:
-                profile = json.load(f)
-        else:
-            profile = {"user_name": "Jerry", "monthly_budget": 10000.0, "current_surplus": 10000.0, "fixed_expenses": {}, "recent_purchases": []}
-        profile["current_surplus"] = round(float(profile.get("current_surplus", 0)) - float(amount), 2)
-        profile.setdefault("recent_purchases", [])
-        if item_name not in profile["recent_purchases"]:
-            profile["recent_purchases"].append(item_name)
-        with open(PROFILE_FILE, "w", encoding="utf-8") as f:
-            json.dump(profile, f, ensure_ascii=False, indent=4)
-
-    try:
-        memory_collection.add(
-            documents=[f"Jerry recorded a direct expense: {item_name}, amount {amount} yuan."],
-            metadatas=[{"source": "direct_expense"}],
-            ids=[f"direct_{int(time.time())}_{os.urandom(2).hex()}"],
-        )
-    except Exception as mem_err:
-        print(f"direct expense memory save failed: {mem_err}")
-
-    reply = (
-        f"已直接记账：{item_name}，支出 {amount} 元。\n\n"
-        f"当前剩余预算：{profile['current_surplus']} 元。\n\n"
-        "下次如果还想先查价格，可以说：我想买某个商品，帮我看看值不值。"
-    )
-    save_audit_log(source_query or item_name, reply[:80])
-    save_chat_history(
-        query=source_query or f"{item_name} {amount}",
-        intent="DIRECT_EXPENSE",
-        assistant_reply=reply,
-        item_name=item_name,
-        amount=float(amount),
-        audit_data={"item": item_name, "price": float(amount), "direct_expense": True},
-    )
-    global_pure_async_notify(
-        None,
-        None,
-        (
-            f"### Jerry-Insight 直接记账通知\n\n"
-            f"- 消费项目：`{item_name}`\n"
-            f"- 扣款金额：`-{amount}` 元\n"
-            f"- 当前余额：`{profile['current_surplus']}` 元"
-        ),
-    )
-    return reply, profile
 
 api_key = st.secrets.get("DEEPSEEK_API_KEY", os.getenv("DEEPSEEK_API_KEY", ""))
 base_url = st.secrets.get("DEEPSEEK_BASE_URL", os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"))
@@ -563,28 +469,6 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
     
     # 🔄 【新增】：实时追加短期多轮会话的 User 视角
     st.session_state["chat_history"].append({"role": "user", "content": query_text})
-
-    parsed_intent = classify_user_intent(query_text)
-    if parsed_intent.intent in ("HELP_OR_META", "SMALLTALK_OR_OTHER", "INVALID"):
-        reply_text = parsed_intent.reply or "我主要负责消费审计、价格查询和记账。你可以说：我想买某个商品，帮我看看值不值。"
-        st.session_state["chat_history"].append({"role": "assistant", "content": reply_text})
-        save_chat_history(query_text, parsed_intent.intent, assistant_reply=reply_text)
-        reload_history_sessions()
-        with st.chat_message("assistant"):
-            st.markdown(reply_text)
-        st.session_state['SUBMIT_PROCESSING'] = False
-        st.session_state["active_query"] = None
-        st.stop()
-
-    if parsed_intent.intent == "DIRECT_EXPENSE":
-        reply_text, _ = record_direct_expense(parsed_intent.item_name, parsed_intent.amount, query_text)
-        reload_history_sessions()
-        st.session_state["chat_history"].append({"role": "assistant", "content": reply_text})
-        with st.chat_message("assistant"):
-            st.success(reply_text)
-        st.session_state['SUBMIT_PROCESSING'] = False
-        st.session_state["active_query"] = None
-        st.stop()
     
     ask_msg_content = (
         f"### 🔍 省钱智探agent捕获新审计提问\n\n"
@@ -658,15 +542,10 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
             }
             
             # 🔄 【新增】：将当前审计成果持久化同步至侧边栏历史归档列表中
-            save_chat_history(
-                query_text,
-                "SHOPPING_QUERY",
-                assistant_reply=final_display_text,
-                item_name=clean_keyword,
-                amount=detected_price,
-                audit_data=st.session_state['LAST_AUDIT'],
-            )
-            reload_history_sessions()
+            st.session_state["history_sessions"].append({
+                "query": query_text,
+                "audit_data": st.session_state['LAST_AUDIT']
+            })
             
         except Exception as e:
             status.update(label=f"❌ 流程运行异常: {str(e)}", state="error", expanded=False)
@@ -693,9 +572,6 @@ if st.session_state['LAST_AUDIT'] and st.session_state["active_query"]:
             
         with st.chat_message("assistant"):
             st.markdown("### 🌐 Jerry-Scout 全网核心情报来源与存证链接")
-            if audit_data.get("read_only"):
-                st.markdown(audit_data.get("display_answer") or "这条历史记录没有可显示的回复。")
-                st.stop()
             blocks = audit_data["info_blocks"]
             for idx in range(4):
                 if blocks and idx < len(blocks):
