@@ -42,8 +42,7 @@ class JerryMcpServer:
                 
                 if tool_name == "record_expense":
                     # 🔒 进入临界区，上锁！防止任何并发记账冲突
-                    with self.lock:
-                        self.update_balance_func(arguments["amount"], arguments["item_name"])
+                    self.update_balance_func(arguments["amount"], arguments["item_name"])
                     return json.dumps({
                         "jsonrpc": "2.0", "id": req_id,
                         "result": {"content": [{"type": "text", "text": f"[MCP Gateway 安全记账完毕] 商品: {arguments['item_name']}, 成功扣减: {arguments['amount']} 元"}]}
