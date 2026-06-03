@@ -99,6 +99,7 @@ def global_pure_async_notify(ding_token, wx_token, content):
 
 FILE_LOCK = threading.Lock()
 PROFILE_FILE = "jerry_profile.json"
+HISTORY_FILE = "jerry_history_sessions.json"
 
 @st.cache_resource
 def init_chroma_and_inject_profiles():
@@ -122,6 +123,35 @@ def get_dynamic_profile():
             return default_profile
         with open(PROFILE_FILE, "r", encoding="utf-8") as f: 
             return json.load(f)
+
+def load_history_sessions():
+    if not os.path.exists(HISTORY_FILE):
+        return []
+    try:
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except Exception as err:
+        print(f"历史记录读取失败: {err}")
+        return []
+
+def save_history_sessions():
+    try:
+        with FILE_LOCK:
+            with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+                json.dump(st.session_state["history_sessions"][-100:], f, ensure_ascii=False, indent=2)
+    except Exception as err:
+        print(f"历史记录保存失败: {err}")
+
+def append_history_session(query_text, audit_data):
+    st.session_state["history_sessions"].append({
+        "query": query_text,
+        "audit_data": audit_data
+    })
+    save_history_sessions()
+
+if not st.session_state["history_sessions"]:
+    st.session_state["history_sessions"] = load_history_sessions()
 
 def parse_direct_accounting_input(text):
     """识别“已经买了并花了多少钱”的输入；想买/问价不走这里。"""
@@ -168,7 +198,7 @@ def execute_direct_accounting(query_text, item, price):
     }
 
     st.session_state["LAST_AUDIT"] = audit_data
-    st.session_state["history_sessions"].append({"query": query_text, "audit_data": audit_data})
+    append_history_session(query_text, audit_data)
     st.session_state["chat_history"].append({"role": "assistant", "content": display_answer})
     st.session_state["ACTION_COMPLETED"] = True
     st.session_state["just_recorded"] = f"💰 已直接记账：{item}，支出 {price} 元。"
@@ -452,6 +482,9 @@ with st.sidebar:
         if os.path.exists(PROFILE_FILE):
             try: os.remove(PROFILE_FILE)
             except: pass
+        if os.path.exists(HISTORY_FILE):
+            try: os.remove(HISTORY_FILE)
+            except: pass
         st.session_state['LAST_AUDIT'] = None
         st.session_state["active_query"] = None
         st.session_state["just_recorded"] = None
@@ -648,10 +681,7 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
             global_pure_async_notify(None, None, result_notice_content)
             
             # 🔄 【新增】：将当前审计成果持久化同步至侧边栏历史归档列表中
-            st.session_state["history_sessions"].append({
-                "query": query_text,
-                "audit_data": st.session_state['LAST_AUDIT']
-            })
+            append_history_session(query_text, st.session_state['LAST_AUDIT'])
             
         except Exception as e:
             status.update(label=f"❌ 流程运行异常: {str(e)}", state="error", expanded=False)
