@@ -540,6 +540,15 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
                 "crawler_results": crawler_results,
                 "long_term_context": long_term_context
             }
+
+            result_notice_content = (
+                f"### Jerry-Insight 审计结果已生成\n\n"
+                f"- 用户问题：`{query_text}`\n"
+                f"- 商品目标：`{clean_keyword}`\n"
+                f"- 预估金额：`{detected_price}` 元\n\n"
+                f"{final_display_text[:1200]}"
+            )
+            global_pure_async_notify(None, None, result_notice_content)
             
             # 🔄 【新增】：将当前审计成果持久化同步至侧边栏历史归档列表中
             st.session_state["history_sessions"].append({
