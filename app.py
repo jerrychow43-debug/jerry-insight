@@ -668,7 +668,18 @@ if chat_query and chat_query.strip():
             st.markdown(reply_text)
         st.session_state['SUBMIT_PROCESSING'] = False
         st.session_state["active_query"] = None
-        st.stop()
+        st.session_state["LAST_AUDIT"] = {
+            "price": 0.0,
+            "item": query_text,
+            "display_answer": reply_text,
+            "info_blocks": [],
+            "price_table_data": [],
+            "crawler_results": [],
+            "long_term_context": "",
+            "read_only": True,
+        }
+        st.session_state["active_query"] = query_text
+        st.rerun()
 
     if parsed_intent.intent == "DIRECT_EXPENSE":
         reply_text, profile_after_record = record_direct_expense(parsed_intent.item_name, parsed_intent.amount, query_text)
@@ -689,6 +700,7 @@ if chat_query and chat_query.strip():
             "read_only": True,
         }
         st.session_state['SUBMIT_PROCESSING'] = False
+        st.session_state["just_recorded"] = f"已扣除 {parsed_intent.item_name} {float(parsed_intent.amount):g} 元"
         st.rerun()
     
     ask_msg_content = (
@@ -811,10 +823,10 @@ if chat_query and chat_query.strip():
                 "read_only": True,
             }
             st.session_state['SUBMIT_PROCESSING'] = False
-            st.rerun()
+            # Keep the fallback result visible in this run instead of flashing away.
             
     st.session_state['SUBMIT_PROCESSING'] = False
-    st.rerun()
+    # Let the result renderer below consume LAST_AUDIT in the same Streamlit run.
 
 
 # ==========================================================
@@ -822,7 +834,16 @@ if chat_query and chat_query.strip():
 # ==========================================================
 main_ui_container = st.empty()
 
-if st.session_state['LAST_AUDIT'] and st.session_state["active_query"]:
+if st.session_state['LAST_AUDIT'] and st.session_state["active_query"] and st.session_state['LAST_AUDIT'].get("read_only"):
+    audit_data = st.session_state['LAST_AUDIT']
+    with main_ui_container.container():
+        with st.chat_message("user"):
+            st.write(st.session_state["active_query"])
+        with st.chat_message("assistant"):
+            st.markdown(audit_data.get("display_answer") or "这条历史记录没有可显示的回复。")
+            st.caption("这条记录已经处理完成，可以继续在下方输入新问题。")
+
+elif st.session_state['LAST_AUDIT'] and st.session_state["active_query"]:
     audit_data = st.session_state['LAST_AUDIT']
     
     with main_ui_container.container():
@@ -832,7 +853,7 @@ if st.session_state['LAST_AUDIT'] and st.session_state["active_query"]:
         with st.chat_message("assistant"):
             if audit_data.get("read_only"):
                 st.markdown(audit_data.get("display_answer") or "这条历史记录没有可显示的回复。")
-                st.stop()
+                st.caption("这条记录已经处理完成，可以继续在下方输入新问题。")
             st.markdown("### 🌐 Jerry-Scout 全网核心情报来源与存证链接")
             blocks = audit_data["info_blocks"]
             for idx in range(4):
@@ -877,7 +898,7 @@ if st.session_state['LAST_AUDIT'] and st.session_state["active_query"]:
         is_insufficient = dynamic_profile['current_surplus'] < audit_data['price']
         expected_surplus = round(dynamic_profile['current_surplus'] - audit_data['price'], 2)
         
-        buttons_disabled = st.session_state['ACTION_COMPLETED']
+        buttons_disabled = st.session_state['ACTION_COMPLETED'] or audit_data.get("read_only", False)
         
         with col1:
             if is_insufficient:
