@@ -102,6 +102,7 @@ def global_pure_async_notify(ding_token, wx_token, content):
 FILE_LOCK = threading.Lock()
 PROFILE_FILE = "jerry_profile.json"
 HISTORY_FILE = "jerry_history_sessions.json"
+LEDGER_FILE = "jerry_ledger.json"
 
 @st.cache_resource
 def init_chroma_and_inject_profiles():
@@ -154,6 +155,95 @@ def append_history_session(query_text, audit_data):
 
 if not st.session_state["history_sessions"]:
     st.session_state["history_sessions"] = load_history_sessions()
+
+def load_ledger_entries():
+    if not os.path.exists(LEDGER_FILE):
+        return []
+    try:
+        with open(LEDGER_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except Exception as err:
+        print(f"流水读取失败: {err}")
+        return []
+
+def save_ledger_entries(entries):
+    try:
+        with FILE_LOCK:
+            with open(LEDGER_FILE, "w", encoding="utf-8") as f:
+                json.dump(entries[-300:], f, ensure_ascii=False, indent=2)
+    except Exception as err:
+        print(f"流水保存失败: {err}")
+
+def append_ledger_entry(item, price, source, raw_query):
+    entries = load_ledger_entries()
+    entry = {
+        "id": f"{int(time.time())}_{len(entries) + 1}",
+        "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+        "item": item,
+        "amount": round(float(price), 2),
+        "source": source,
+        "raw_query": raw_query,
+        "status": "active"
+    }
+    entries.append(entry)
+    save_ledger_entries(entries)
+    return entry
+
+def is_undo_request(text):
+    normalized = text.strip()
+    undo_words = ["撤销上一笔", "撤销上次", "撤销刚才", "退回上一笔", "取消上一笔", "上一笔记错了"]
+    return any(word in normalized for word in undo_words)
+
+def execute_undo_last_expense(query_text):
+    entries = load_ledger_entries()
+    target_index = None
+    target_entry = None
+    for idx in range(len(entries) - 1, -1, -1):
+        entry = entries[idx]
+        if entry.get("status") == "active" and float(entry.get("amount", 0)) > 0:
+            target_index = idx
+            target_entry = entry
+            break
+
+    if target_entry is None:
+        reply = "暂时没有可以撤销的上一笔支出。"
+        st.session_state["quick_reply"] = {"query": query_text, "reply": reply}
+        st.session_state["chat_history"].append({"role": "assistant", "content": reply})
+        return None
+
+    amount = round(float(target_entry["amount"]), 2)
+    item = target_entry.get("item", "未命名消费")
+    profile = get_dynamic_profile()
+    profile["current_surplus"] = round(profile["current_surplus"] + amount, 2)
+    with open(PROFILE_FILE, "w", encoding="utf-8") as f:
+        json.dump(profile, f, ensure_ascii=False, indent=4)
+
+    entries[target_index]["status"] = "cancelled"
+    entries[target_index]["cancelled_at"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    entries[target_index]["cancel_query"] = query_text
+    save_ledger_entries(entries)
+
+    display_answer = (
+        f"↩️ 已撤销上一笔支出：【{item}】 **{amount} 元**。\n\n"
+        f"💳 已退回余额，当前卡内剩余流动资金：**{profile['current_surplus']} 元**。"
+    )
+    st.session_state["quick_reply"] = {"query": query_text, "reply": display_answer}
+    st.session_state["chat_history"].append({"role": "assistant", "content": display_answer})
+    st.session_state["just_recorded"] = f"↩️ 已撤销上一笔：{item}，退回 {amount} 元。"
+
+    global_pure_async_notify(
+        None,
+        None,
+        (
+            f"### Jerry-Insight 撤销上一笔成功\n\n"
+            f"- 撤销项目：`{item}`\n"
+            f"- 退回金额：`{amount}` 元\n"
+            f"- 当前余额：`{profile['current_surplus']}` 元\n"
+            f"- 撤销时间：`{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}`"
+        )
+    )
+    return target_entry
 
 def parse_direct_accounting_input(text):
     """识别“已经买了并花了多少钱”的输入；想买/问价不走这里。"""
@@ -222,6 +312,7 @@ def execute_direct_accounting(query_text, item, price):
 
     st.session_state["LAST_AUDIT"] = audit_data
     append_history_session(query_text, audit_data)
+    append_ledger_entry(item, price, "direct_accounting", query_text)
     st.session_state["chat_history"].append({"role": "assistant", "content": display_answer})
     st.session_state["ACTION_COMPLETED"] = True
     st.session_state["just_recorded"] = f"💰 已直接记账：{item}，支出 {price} 元。"
@@ -425,6 +516,7 @@ def callback_execute_confirm():
             
             with open(PROFILE_FILE, "w", encoding="utf-8") as f: 
                 json.dump(profile, f, ensure_ascii=False, indent=4)
+            append_ledger_entry(audit_data['item'], audit_data['price'], "audit_confirm", st.session_state.get("active_query", ""))
             
             msg_content = (
                 f"### 🪙 省钱智探agent · 账单自动核销支出回执\n\n"
@@ -507,6 +599,9 @@ with st.sidebar:
             except: pass
         if os.path.exists(HISTORY_FILE):
             try: os.remove(HISTORY_FILE)
+            except: pass
+        if os.path.exists(LEDGER_FILE):
+            try: os.remove(LEDGER_FILE)
             except: pass
         st.session_state['LAST_AUDIT'] = None
         st.session_state["active_query"] = None
@@ -596,6 +691,26 @@ if st.session_state['SUBMIT_PROCESSING'] and st.session_state["active_query"] is
 # 拦截 chat_input 的真实提交事件
 if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING']:
     query_text = chat_query.strip()
+
+    if is_undo_request(query_text):
+        st.session_state["active_query"] = None
+        st.session_state['LAST_AUDIT'] = None
+        st.session_state['ACTION_COMPLETED'] = False
+        st.session_state["quick_reply"] = None
+        st.session_state["chat_history"].append({"role": "user", "content": query_text})
+        try:
+            execute_undo_last_expense(query_text)
+        except Exception as undo_err:
+            reply = f"撤销失败：{undo_err}"
+            st.session_state["quick_reply"] = {"query": query_text, "reply": reply}
+            st.session_state["just_recorded"] = reply
+            print(f"撤销上一笔失败: {undo_err}")
+        finally:
+            st.session_state['SUBMIT_PROCESSING'] = False
+            st.session_state["active_query"] = None
+            st.session_state["LAST_AUDIT"] = None
+            st.session_state["ACTION_COMPLETED"] = False
+        st.rerun()
 
     direct_accounting = parse_direct_accounting_input(query_text)
     if direct_accounting:
