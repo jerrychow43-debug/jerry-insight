@@ -546,8 +546,13 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
 
     direct_accounting = parse_direct_accounting_input(query_text)
     if direct_accounting:
-        execute_direct_accounting(query_text, direct_accounting["item"], direct_accounting["price"])
-        st.session_state['SUBMIT_PROCESSING'] = False
+        try:
+            execute_direct_accounting(query_text, direct_accounting["item"], direct_accounting["price"])
+        finally:
+            st.session_state['SUBMIT_PROCESSING'] = False
+            st.session_state["active_query"] = None
+            st.session_state["LAST_AUDIT"] = None
+            st.session_state["ACTION_COMPLETED"] = False
         st.rerun()
     
     ask_msg_content = (
