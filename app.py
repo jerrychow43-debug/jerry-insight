@@ -117,7 +117,7 @@ def send_dingtalk_background(title, markdown_content):
             res_json = {"status_code": response.status_code, "text": response.text[:300]}
         status = "success" if res_json.get("errcode") == 0 else "failed"
         save_notification_log("dingtalk", full_title, markdown_content, status, json.dumps(res_json, ensure_ascii=False))
-        print(f"DingTalk notification {status}: {full_title}")
+        print(f"DingTalk notification {status}: {full_title}; response={json.dumps(res_json, ensure_ascii=False)}")
         return res_json
     except Exception as e:
         save_notification_log("dingtalk", full_title, markdown_content, "error", str(e))
@@ -130,10 +130,7 @@ if 'ASYNC_EXECUTOR' not in st.session_state:
 def global_pure_async_notify(ding_token, wx_token, content):
     """ 异步推送核心：扔进线程池，杜绝因网络延迟导致的前端卡顿 """
     title = "资产动态调整"
-    if 'ASYNC_EXECUTOR' in st.session_state:
-        st.session_state['ASYNC_EXECUTOR'].submit(send_dingtalk_background, title, content)
-    else:
-        send_dingtalk_background(title, content)
+    return send_dingtalk_background(title, content)
 
 FILE_LOCK = threading.Lock()
 PROFILE_FILE = "jerry_profile.json"
@@ -578,7 +575,8 @@ if st.session_state.get("just_recorded"):
     st.session_state["just_recorded"] = None
 
 # 对话框管理
-chat_query = st.chat_input("输入商品名称，开始资产风控审计...", key="user_chat_input_core_key", disabled=st.session_state['SUBMIT_PROCESSING'])
+st.session_state['SUBMIT_PROCESSING'] = False
+chat_query = st.chat_input("输入商品名称，开始资产风控审计...", key="user_chat_input_core_key", disabled=False)
 
 # ==========================================================
 # 🚨 6. 核心高能控制器流程整合与修复
@@ -589,7 +587,7 @@ if st.session_state['SUBMIT_PROCESSING'] and st.session_state["active_query"] is
         st.session_state["active_query"] = target_query
 
 # 拦截 chat_input 的真实提交事件
-if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING']:
+if chat_query and chat_query.strip():
     query_text = chat_query.strip()
     st.session_state['SUBMIT_PROCESSING'] = True
     st.session_state["active_query"] = query_text
@@ -612,14 +610,25 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
         st.stop()
 
     if parsed_intent.intent == "DIRECT_EXPENSE":
-        reply_text, _ = record_direct_expense(parsed_intent.item_name, parsed_intent.amount, query_text)
+        reply_text, profile_after_record = record_direct_expense(parsed_intent.item_name, parsed_intent.amount, query_text)
         reload_history_sessions()
         st.session_state["chat_history"].append({"role": "assistant", "content": reply_text})
-        with st.chat_message("assistant"):
-            st.success(reply_text)
+        st.session_state["LAST_AUDIT"] = {
+            "price": float(parsed_intent.amount),
+            "item": parsed_intent.item_name,
+            "display_answer": (
+                f"### 已扣除 {parsed_intent.item_name} {float(parsed_intent.amount):g} 元\n\n"
+                f"{reply_text}\n\n"
+                f"当前余额：{profile_after_record['current_surplus']} 元"
+            ),
+            "info_blocks": [],
+            "price_table_data": [],
+            "crawler_results": [],
+            "long_term_context": "",
+            "read_only": True,
+        }
         st.session_state['SUBMIT_PROCESSING'] = False
-        st.session_state["active_query"] = None
-        st.stop()
+        st.rerun()
     
     ask_msg_content = (
         f"### 🔍 省钱智探agent捕获新审计提问\n\n"
@@ -738,10 +747,10 @@ if st.session_state['LAST_AUDIT'] and st.session_state["active_query"]:
             st.write(st.session_state["active_query"])
             
         with st.chat_message("assistant"):
-            st.markdown("### 🌐 Jerry-Scout 全网核心情报来源与存证链接")
             if audit_data.get("read_only"):
                 st.markdown(audit_data.get("display_answer") or "这条历史记录没有可显示的回复。")
                 st.stop()
+            st.markdown("### 🌐 Jerry-Scout 全网核心情报来源与存证链接")
             blocks = audit_data["info_blocks"]
             for idx in range(4):
                 if blocks and idx < len(blocks):
