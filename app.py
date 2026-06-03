@@ -47,9 +47,6 @@ from core.intent_plus import classify_user_intent
 from core.hybrid_retriever import JaccardHybridRetriever
 from tools.mcp_server import JerryMcpServer
 
-from tools.search import web_search_pro
-from tools.price_crawler import crawl_smzdm_price      
-from core.jerry_fsm_agent import JerryFSMAgent      
 from data.sql_db import init_runtime_tables, load_recent_chat_history, save_audit_log, save_chat_history, save_notification_log
 from dotenv import load_dotenv
 
@@ -74,6 +71,44 @@ except KeyError as import_err:
                 role_tag = "用户" if msg["role"] == "user" else "铁算盘"
                 lines.append(f"- {role_tag}: {msg['content']}")
             return "\n".join(lines)
+
+
+def safe_web_search_pro(keyword):
+    try:
+        from tools.search import web_search_pro
+        return web_search_pro(keyword)
+    except Exception as exc:
+        print(f"web_search_pro unavailable, using fallback: {exc}")
+        fallback_block = [(f"暂未取得实时网页搜索结果，已使用本地兜底行情判断：{keyword}", "", 0.5)]
+        fallback_text = f"【本地兜底情报】暂未取得 {keyword} 的实时搜索结果，请结合常识和预算谨慎判断。"
+        return fallback_block, fallback_text, []
+
+
+def safe_crawl_smzdm_price(keyword):
+    try:
+        from tools.price_crawler import crawl_smzdm_price
+        return crawl_smzdm_price(keyword)
+    except Exception as exc:
+        print(f"crawl_smzdm_price unavailable, skipping crawler: {exc}")
+        return []
+
+
+def create_fsm_agent():
+    try:
+        from core.jerry_fsm_agent import JerryFSMAgent
+        return JerryFSMAgent()
+    except Exception as exc:
+        print(f"JerryFSMAgent unavailable, using local fallback: {exc}")
+
+        class LocalFSMAgent:
+            def __init__(self):
+                self.current_state = "INIT"
+
+            def transition_to(self, next_state):
+                print(f"[FSM fallback] {self.current_state} -> {next_state}")
+                self.current_state = next_state
+
+        return LocalFSMAgent()
 
 load_dotenv()
 init_runtime_tables()
@@ -341,7 +376,7 @@ class JerryAgentHarness:
                 elif parsed_json.get("action") == "Call_Web_Search":
                     search_kw = parsed_json.get("action_input")
                     if status_widget: status_widget.write(f"🔍 触发多路追查，深度搜索: `{search_kw}`...")
-                    _, search_feedback_text, _ = web_search_pro(search_kw)
+                    _, search_feedback_text, _ = safe_web_search_pro(search_kw)
                     conversation_history.append({"role": "assistant", "content": raw_output})
                     conversation_history.append({"role": "user", "content": f"【追查情报反馈】：\n{search_feedback_text[:1200]}"})
             except Exception as e:
@@ -387,7 +422,7 @@ class JerryAgentHarness:
 # 👑 4. FSM 状态机托管管道
 # ==========================================================
 def run_fsm_scout_pipeline(query, status_widget):
-    fsm = JerryFSMAgent()
+    fsm = create_fsm_agent()
     fsm.transition_to("INTENT_CHECK")
     if classify_user_intent(query).intent != "SHOPPING_QUERY":
         fsm.transition_to("END")
@@ -401,8 +436,8 @@ def run_fsm_scout_pipeline(query, status_widget):
         clean_keyword = query.strip()
     
     future_memory = st.session_state['ASYNC_EXECUTOR'].submit(hybrid_retriever.retrieve_and_rerank, query)
-    future_web = st.session_state['ASYNC_EXECUTOR'].submit(web_search_pro, clean_keyword)
-    future_crawler = st.session_state['ASYNC_EXECUTOR'].submit(crawl_smzdm_price, clean_keyword)
+    future_web = st.session_state['ASYNC_EXECUTOR'].submit(safe_web_search_pro, clean_keyword)
+    future_crawler = st.session_state['ASYNC_EXECUTOR'].submit(safe_crawl_smzdm_price, clean_keyword)
     
     try:
         existing_data = memory_collection.get()
