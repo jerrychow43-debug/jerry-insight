@@ -302,9 +302,6 @@ def callback_execute_confirm():
             with open(PROFILE_FILE, "w", encoding="utf-8") as f: 
                 json.dump(profile, f, ensure_ascii=False, indent=4)
             
-            memory_collection.add(documents=[f"强行确认购买了关于'{audit_data['item']}'的商品。[已买入]"], ids=[f"pass_{int(time.time())}"])
-            save_audit_log(st.session_state["active_query"], audit_data["display_answer"][:50])
-            
             msg_content = (
                 f"### 🪙 省钱智探agent · 账单自动核销支出回执\n\n"
                 f"--- \n\n"
@@ -328,6 +325,12 @@ def callback_execute_confirm():
                 f"» *资产实时监控中 · 记账本已同步*"
             )
             global_pure_async_notify(None, None, deduct_notice_content)
+
+            try:
+                memory_collection.add(documents=[f"强行确认购买了关于'{audit_data['item']}'的商品。[已买入]"], ids=[f"pass_{int(time.time())}"])
+                save_audit_log(st.session_state["active_query"], audit_data["display_answer"][:50])
+            except Exception as persist_err:
+                print(f"扣款已完成，但保存记忆/日志失败: {persist_err}")
 
             time.sleep(0.2)
             st.session_state["just_recorded"] = f"💰 资产扣减成功！顺利购入【{audit_data['item']}】，已支出 {audit_data['price']} 元。"
