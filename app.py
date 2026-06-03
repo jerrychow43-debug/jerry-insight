@@ -42,18 +42,38 @@ if "history_sessions" not in st.session_state:
 # 🛠️ 2. 核心底层组件引入与环境配置对齐
 # =====================================================================
 from bs4 import BeautifulSoup  
-from core.router import classify_intent, clean_query_to_entity, fallback_clean_query_to_entity
+from core.router import clean_query_to_entity, fallback_clean_query_to_entity
 from core.intent_plus import classify_user_intent
-from core.memory_manager import AdvancedMemoryManager
 from core.hybrid_retriever import JaccardHybridRetriever
 from tools.mcp_server import JerryMcpServer
 
-from core.brain import ask_llm
 from tools.search import web_search_pro
 from tools.price_crawler import crawl_smzdm_price      
 from core.jerry_fsm_agent import JerryFSMAgent      
 from data.sql_db import init_runtime_tables, load_recent_chat_history, save_audit_log, save_chat_history, save_notification_log
 from dotenv import load_dotenv
+
+try:
+    from core.memory_manager import AdvancedMemoryManager
+except KeyError as import_err:
+    print(f"Memory manager hot-reload import failed, using local fallback: {import_err}")
+
+    class AdvancedMemoryManager:
+        def __init__(self, client, max_turns: int = 3):
+            self.client = client
+            self.max_turns = max_turns
+            self.short_term_memory = []
+
+        def add_message(self, role: str, content: str):
+            self.short_term_memory.append({"role": role, "content": content})
+            self.short_term_memory = self.short_term_memory[-(self.max_turns * 2):]
+
+        def get_compiled_context(self) -> str:
+            lines = ["【近期临近会话上下文】:"]
+            for msg in self.short_term_memory:
+                role_tag = "用户" if msg["role"] == "user" else "铁算盘"
+                lines.append(f"- {role_tag}: {msg['content']}")
+            return "\n".join(lines)
 
 load_dotenv()
 init_runtime_tables()
