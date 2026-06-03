@@ -652,10 +652,18 @@ if chat_query and chat_query.strip():
             
             if raw_answer == "INVALID_INTENT":
                 status.update(label="🚨 监测到非业务输入。", state="error", expanded=False)
-                st.error("请输入有效的业务商品进行审计. ")
+                st.session_state["LAST_AUDIT"] = {
+                    "price": 0.0,
+                    "item": query_text,
+                    "display_answer": "### 没有进入商品审计\n\n这句话暂时没有被系统识别成商品购买请求。你可以试试：我想买可乐，帮我看看值不值。",
+                    "info_blocks": [],
+                    "price_table_data": [],
+                    "crawler_results": [],
+                    "long_term_context": "",
+                    "read_only": True,
+                }
                 st.session_state['SUBMIT_PROCESSING'] = False
-                st.session_state["active_query"] = None
-                st.stop()
+                st.rerun()
                 
             status.update(label="🚀 FSM 流程闭合！情报与定向爬虫数据同步完毕！", state="complete", expanded=False)
             
@@ -731,10 +739,24 @@ if chat_query and chat_query.strip():
             
         except Exception as e:
             status.update(label=f"❌ 流程运行异常: {str(e)}", state="error", expanded=False)
-            st.error(f"引擎报错: {e}")
+            print(f"Shopping flow error for query={query_text}: {e}")
+            st.session_state["LAST_AUDIT"] = {
+                "price": 0.0,
+                "item": query_text,
+                "display_answer": (
+                    "### 审计流程中断\n\n"
+                    f"系统已经收到你的问题：`{query_text}`，但后续搜索/审计流程出现异常。\n\n"
+                    f"错误信息：`{e}`\n\n"
+                    "你可以换个更短的商品名再试一次，比如：可乐、雪碧、拍立得。"
+                ),
+                "info_blocks": [],
+                "price_table_data": [],
+                "crawler_results": [],
+                "long_term_context": "",
+                "read_only": True,
+            }
             st.session_state['SUBMIT_PROCESSING'] = False
-            st.session_state["active_query"] = None
-            st.stop()
+            st.rerun()
             
     st.session_state['SUBMIT_PROCESSING'] = False
     st.rerun()
