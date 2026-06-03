@@ -585,7 +585,7 @@ if st.session_state.get("just_recorded"):
     st.session_state["just_recorded"] = None
 
 # 对话框管理
-chat_query = st.chat_input("输入商品名称，开始资产风控审计...", key="user_chat_input_core_key", disabled=st.session_state['SUBMIT_PROCESSING'])
+chat_query = st.chat_input("输入商品名称，开始资产风控审计...", key="user_chat_input_core_key", disabled=False)
 
 # ==========================================================
 # 🚨 6. 核心高能控制器流程整合与修复
@@ -615,8 +615,17 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
         with st.chat_message("assistant"):
             st.markdown(reply_text)
         st.session_state['SUBMIT_PROCESSING'] = False
-        st.session_state["active_query"] = None
-        st.stop()
+        st.session_state["LAST_AUDIT"] = {
+            "price": 0.0,
+            "item": query_text,
+            "display_answer": reply_text,
+            "info_blocks": [],
+            "price_table_data": [],
+            "crawler_results": [],
+            "long_term_context": "",
+            "read_only": True,
+        }
+        st.rerun()
 
     if parsed_intent.intent == "DIRECT_EXPENSE":
         reply_text, _ = record_direct_expense(parsed_intent.item_name, parsed_intent.amount, query_text)
@@ -625,8 +634,17 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
         with st.chat_message("assistant"):
             st.success(reply_text)
         st.session_state['SUBMIT_PROCESSING'] = False
-        st.session_state["active_query"] = None
-        st.stop()
+        st.session_state["LAST_AUDIT"] = {
+            "price": float(parsed_intent.amount),
+            "item": parsed_intent.item_name,
+            "display_answer": reply_text,
+            "info_blocks": [],
+            "price_table_data": [],
+            "crawler_results": [],
+            "long_term_context": "",
+            "read_only": True,
+        }
+        st.rerun()
     
     ask_msg_content = (
         f"### 🔍 省钱智探agent捕获新审计提问\n\n"
@@ -646,8 +664,17 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
                 status.update(label="🚨 监测到非业务输入。", state="error", expanded=False)
                 st.error("请输入有效的业务商品进行审计. ")
                 st.session_state['SUBMIT_PROCESSING'] = False
-                st.session_state["active_query"] = None
-                st.stop()
+                st.session_state["LAST_AUDIT"] = {
+                    "price": 0.0,
+                    "item": query_text,
+                    "display_answer": "这句话没有被识别成商品审计请求。你可以试试：我想买可乐，帮我看看值不值得。",
+                    "info_blocks": [],
+                    "price_table_data": [],
+                    "crawler_results": [],
+                    "long_term_context": "",
+                    "read_only": True,
+                }
+                st.rerun()
                 
             status.update(label="🚀 FSM 流程闭合！情报与定向爬虫数据同步完毕！", state="complete", expanded=False)
             
@@ -714,8 +741,22 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
             status.update(label=f"❌ 流程运行异常: {str(e)}", state="error", expanded=False)
             st.error(f"引擎报错: {e}")
             st.session_state['SUBMIT_PROCESSING'] = False
-            st.session_state["active_query"] = None
-            st.stop()
+            st.session_state["LAST_AUDIT"] = {
+                "price": 0.0,
+                "item": query_text,
+                "display_answer": (
+                    "### 审计流程中断\n\n"
+                    f"我已经收到你的问题：`{query_text}`，但后续搜索或审计流程出现异常。\n\n"
+                    f"错误信息：`{e}`\n\n"
+                    "可以再试一次，或者输入更短的商品名，比如：可乐、雪碧、拍立得。"
+                ),
+                "info_blocks": [],
+                "price_table_data": [],
+                "crawler_results": [],
+                "long_term_context": "",
+                "read_only": True,
+            }
+            st.rerun()
             
     st.session_state['SUBMIT_PROCESSING'] = False
     st.rerun()
