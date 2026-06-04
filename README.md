@@ -1,118 +1,110 @@
-# 🛡️ Jerry-Insight Pro v3.5
+# Jerry-Insight / 省钱智探 Agent
 
-> **工业级消费风控与排雷 Agent 引擎（自研 Harness 有限状态机 + 标准 MCP 网关版）**
+一个面向个人消费决策的 Streamlit Agent 项目：用户可以用自然语言询问商品是否值得买、记录已经发生的消费、撤销或加回错误账目，并通过钉钉机器人收到关键操作通知。
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
-[![Framework: Streamlit](https://img.shields.io/badge/Framework-Streamlit-FF4B4B.svg)](https://streamlit.io/)
-[![Protocol: MCP](https://img.shields.io/badge/Protocol-MCP-green.svg)](https://modelcontextprotocol.io/)
+项目重点不是做一个通用聊天机器人，而是围绕“买东西前问价 + 买完后记账 + 历史可追踪”这个具体场景，把输入路由、价格检索、RAG 记忆、账本闭环和异步通知串成一个可运行的 Agent 流程。
 
-本项目针对传统大模型 RAG 应用在**“工具调度死循环”、“长文本记忆丢失”、“输出格式断裂”以及“单线程网络 I/O 阻塞导致前端 UI 卡死”**等工业级四大缺陷，完全抛弃了 LangChain / LangGraph 等重度封装的黑盒框架。
+## 核心功能
 
-系统从底层纯手写了一套 **Harness 有限状态机 (FSM) 控制器**，打通了全网去重比价爬虫、混合向量库、标准 Model Context Protocol (MCP) 资产托管服务、常驻线程池异步消息分发（微信+钉钉），具备极高的工程确定性、自愈降级能力和线程安全性。
+| 功能               | 说明                                                                                                             |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| 商品问价与消费审计 | 输入“我想买可乐”“这个显示器值得买吗”等问题后，系统会抽取商品名，检索历史偏好和外部价格信息，再给出购买建议。 |
+| 普通对话引导       | 对“怎么用”“你好”“你能干嘛”等非购物输入做轻量回复，并引导用户使用问价和记账功能。                           |
+| 直接记账           | 支持“买了雪碧花了3块”“今天午饭花12.5元”等输入，直接写入账本并扣除余额。                                      |
+| 加回余额           | 支持“加回来3块”“退回雪碧3元”等输入，用于退款或记错账后的余额修正。                                           |
+| 撤销上一笔         | 支持“撤销上一笔”“撤销上一条”“加错了”“上一笔记错了”等口语化指令。                                         |
+| 历史持久化         | 问价记录、账本记录和 Trace 日志会写入本地文件，刷新页面后仍可保留。                                              |
+| 钉钉通知           | 问价结果、扣钱、加回、撤销等关键事件会通过钉钉机器人异步推送。                                                   |
+| Agent Trace        | 记录意图判断、实体抽取、RAG 检索、网页搜索、价格抓取、LLM 审计等阶段耗时和错误信息，方便复盘和写简历。           |
 
----
+## 技术栈
 
-## 🚀 核心技术亮点与工业级痛点解决
+- Python、Streamlit
+- OpenAI-compatible API / DeepSeek
+- FSM / Harness 风格的 Agent 流程控制
+- ChromaDB、Jaccard / Rerank 混合检索
+- Tavily Web Search、价格爬虫
+- ThreadPoolExecutor 异步通知
+- JSON / SQLite 本地持久化
+- DingTalk 机器人通知
+- Prompt Engineering、输入路由、结构化输出解析
 
-| 工业级 Agent 缺陷/痛点                     | 本项目硬核解决方案（像素级对齐）                                                                                                                                                                                                                                                                              |
-| :----------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **1. 传统 RAG 指代不明与模糊输入**   | **前置意图消解路由 (`core.intent_router`)**：在并行检索前，缝合双阶段高频分流器（Two-Stage Router），结合短期记忆（Session State）进行指代消解与模糊词翻译，自动将“它”、“这个”补全为精确商品名词。                                                                                                |
-| **2. 工具调度死板与黑盒死循环**      | **手写 Harness 有限状态机 (FSM)**：基于 `while` 循环构建标准的 `Think-Act-Observe` 闭环。在大脑发现初始情报不足时，自主下发网络搜索工具进行二轮追加追查，直至触发 `Final Answer` 状态收敛。                                                                                                       |
-| **3. 记忆管理粗暴截断与 Token 爆炸** | **高级记忆治理机制 (`core.memory_manager`)**：采用动态窗口摘要压缩。短期记忆触及临界点时，自动调用大模型执行流式脱水压缩，生成核心红线摘要挂载于 System Prompt 头部，确保长期核心偏好规则绝对不丢失。                                                                                                 |
-| **4. 输出格式断裂导致系统瘫痪**      | **三层健壮降级容错自愈链**：采用 `try-except` 强行捕获大模型 JSON 破损异常。第一、二层通过提示词追加进行实时状态纠偏与动态自愈；最终极限层通过纯文本安全熔断 Fallback 强行截获价格块，保证系统 0 崩溃。                                                                                               |
-| **5. 高并发下资产账本读写错乱**      | **标准 MCP 协议网关 + 互斥锁 (`tools.mcp_server`)**：基于标准的 Model Context Protocol (MCP) 规范手写 RPC 托管网关。数据改写动作内联操作系统级线程互斥锁（`threading.Lock`），实现分布式、线程安全的资产账本安全联动闭环。                                                                          |
-| **6. 外部网络 I/O 导致前端 UI 瘫痪** | **页面生命周期通知挂载解耦机制**：针对多路 Webhook（微信+钉钉）网络请求高延迟导致 Streamlit 渲染卡死的痛点，重构引入全局单例 `ThreadPoolExecutor` 常驻后台线程池；点击扣款时秒级改写账本并暂存通知，直接 rerun 刷新前端（体感延时 <50ms），由新生命周期开头的后台线程静默异步消费推送，实现完全解耦。 |
+## 运行入口
 
----
+| 文件                       | 用途                                                                                       |
+| -------------------------- | ------------------------------------------------------------------------------------------ |
+| `app.py`                 | 当前主版本，适配 Streamlit Cloud 和本地运行。                                              |
+| `eval_resume_metrics.py` | 面向简历指标的回归测试脚本，验证输入路由、金额提取、账本操作和异步通知入队耗时。           |
+| `eval_agent_quality.py`  | 面向 Agent 质量的评估脚本，读取 Trace 日志和价格样本表，统计链路耗时、错误和价格命中情况。 |
 
-## 🛠️ 系统后端架构拓扑
+## Agent 流程
 
 ```text
-[User Query] -> [Two-Stage Intent Router (意图分流)]
-                       │
-                       ▼ (合法业务请求)
-         [Context 指代消解 / 模糊词翻译]
-                       │
-     ┌─────────────────┴─────────────────┐
-     ▼ (并行调度复用全局常驻线程池)           ▼
-[ChromaDB 向量检索]                 [全网比价爬虫抓取]
-     │                                   │
-     └─────────────────┬─────────────────┘
-                       ▼
-         [Jaccard Hybrid Rerank (去重重排)]
-                       │
-                       ▼
-         [JerryAgentHarness 有限状态机] ◄─── (多轮自主追查、格式纠偏自愈)
-                       │
-                       ▼ (状态收敛 Final Answer)
-     ┌─────────────────┴─────────────────┐
-     ▼                                   ▼
-[Streamlit Trace 思考树看板]         [标准 MCP RPC 资产记账网关]
-                                         │ (OS 级 Mutex Lock 保护)
-                                         ▼
-                                [异步通知暂存挂载区]
-                                         │
-                                         ▼ (常驻后台线程静默消费)
-                                [微信推送 + 钉钉群机器人双路送达]
+用户输入
+  |
+  v
+输入路由
+  |
+  +--> 普通问候 / 使用说明回复
+  |
+  +--> 直接记账 / 加回余额 / 撤销上一笔
+  |       |
+  |       v
+  |    写入账本 + 历史记录 + 钉钉通知
+  |
+  +--> 商品问价与消费审计
+          |
+          v
+      商品实体抽取
+          |
+          v
+      RAG 历史偏好检索 + Web Search + 价格爬虫
+          |
+          v
+      LLM 审计总结
+          |
+          v
+      用户确认扣款 / 取消购买
+          |
+          v
+      账本更新 + 历史记录 + 钉钉通知
 ```
 
+## 本地与云端配置
 
-## 📂 项目模块化目录架构
+本地运行可以使用环境变量或 `.env`。部署到 Streamlit Cloud 时，建议在 Secrets 面板中配置同名变量。
 
-**Plaintext**
-
-```
-├── main.py                 # Streamlit 全局可视看板、可观测性思考树渲染与调度中枢
-├── core/
-│   ├── intent_router.py    # 双阶段高频意图分流器 (Two-Stage Router)
-│   ├── memory_manager.py   # 智能上下文脱水与二级记忆治理 (AdvancedMemoryManager)
-│   └── hybrid_retriever.py # Jaccard 语义去重混合检索重排引擎 (Hybrid-Rerank)
-├── tools/
-│   ├── mcp_server.py       # 标准 Model Context Protocol (MCP) 线程安全账务托管服务器
-│   ├── search.py           # Tavily Pro 并行网络情报检索组件
-│   └── notify.py           # 微信/钉钉 Webhook 高频分发模块
-└── data/
-    └── sql_db.py           # 生产级审计日志持久化本地安全仓储
+```env
+DEEPSEEK_API_KEY=your_deepseek_api_key
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+TAVILY_API_KEY=your_tavily_api_key
+DINGTALK_WEBHOOK=your_dingtalk_robot_webhook
 ```
 
-## 📦 技术栈 (Tech Stack)
+注意：不要把真实的 API Key、钉钉 Webhook、`.env` 或 `.streamlit/secrets.toml` 提交到 GitHub。
 
-* **LLM Core** : DeepSeek-Chat (支持 DeepSeek-R1 深度思考流策略对齐)
-* **Frontend/Observability** : Streamlit (大厂敏捷开发测试控制台模式，手写实时 Trace 思考树 Timeline)
-* **Vector DB** : ChromaDB (用户长期财务画像与雷点偏好档案挂载)
-* **Reranker** : Custom Jaccard Matrix Reranker (多源情报语义相似度去重比价重排)
-* **Protocol & Concurrency** : Model Context Protocol (MCP) + ThreadPoolExecutor (全局常驻线程池) + threading.Lock (文件互斥锁)
+## 快速启动
 
-
-## ⚙️ 快速开始 (Quick Start)
-
-### 1. 环境准备与依赖安装
-
-**Bash**
-
-```
-git clone [https://github.com/jerrychow43-debug/jerry-insight.git](https://github.com/jerrychow43-debug/jerry-insight.git)
-cd jerry-insight
-python3 -m venv venv
-source venv/bin/activate
+```bash
 pip install -r requirements.txt
+streamlit run app.py
 ```
 
-### 2. 配置本地环境变量
+如果要运行本地参考版本：
 
-在项目根目录下创建 `.env` 文件，塞入你的核心 API 密钥：
-
-**代码段**
-
-```
-DEEPSEEK_API_KEY="your_deepseek_api_key"
-TAVILY_API_KEY="your_tavily_api_key"
+```bash
+streamlit run app_local.py
 ```
 
-### 3. 本地启动服务
+## 本地数据文件
 
-**Bash**
+项目运行后会生成一些本地状态文件：
 
-```
-streamlit run main.py
-```
+| 文件                            | 说明                              |
+| ------------------------------- | --------------------------------- |
+| `jerry_profile.json`          | 用户预算、余额和个人偏好。        |
+| `jerry_history_sessions.json` | 历史问价和记账会话。              |
+| `jerry_ledger.json`           | 消费、退款、撤销等账本流水。      |
+| `jerry_trace_logs.jsonl`      | Agent 每次问价链路的 Trace 日志。 |
+
+这些文件适合本地测试和演示。云端部署时，Streamlit Cloud 的本地文件不一定长期稳定，后续可以替换为 SQLite 云盘、Supabase、PostgreSQL 或对象存储。

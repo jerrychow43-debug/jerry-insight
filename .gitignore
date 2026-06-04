@@ -1,5 +1,13 @@
 .env
+.streamlit/secrets.toml
 memory_bank/
 jerry_profile.json
+jerry_history_sessions.json
+jerry_ledger.json
+jerry_trace_logs.jsonl
 __pycache__/
 memory_bank_v2/
+eval_results/
+rendered_resume/
+agent_resume_*.docx
+~$*.docx
