@@ -1,0 +1,21 @@
+{
+  "generated_at": "2026-06-04T13:02:37",
+  "trace_summary": {
+    "trace_count": 0,
+    "ok_trace_count": 0,
+    "error_count": 0,
+    "timeout_or_fallback_count": 0,
+    "avg_total_latency_ms": 0.0,
+    "p95_total_latency_ms": 0.0,
+    "max_total_latency_ms": 0.0,
+    "stage_summary": {}
+  },
+  "price_summary": {
+    "case_count": 0,
+    "within_tolerance_rate": 0.0,
+    "avg_error_pct": 0.0,
+    "p95_error_pct": 0.0,
+    "max_error_pct": 0.0
+  },
+  "price_cases": []
+}

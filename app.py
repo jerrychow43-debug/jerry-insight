@@ -55,8 +55,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+def safe_secret_get(key, default=""):
+    try:
+        return st.secrets.get(key, os.getenv(key, default))
+    except Exception:
+        return os.getenv(key, default)
+
 # 🤖 【钉钉通道安全注入】
-DINGTALK_WEBHOOK = st.secrets.get("DINGTALK_WEBHOOK", os.getenv("DINGTALK_WEBHOOK", ""))
+DINGTALK_WEBHOOK = safe_secret_get("DINGTALK_WEBHOOK", "")
 
 def send_dingtalk_worker_sync(title, markdown_content):
     if not DINGTALK_WEBHOOK:
@@ -430,8 +436,8 @@ def execute_direct_accounting(query_text, item, price):
 
     return audit_data
 
-api_key = st.secrets.get("DEEPSEEK_API_KEY", os.getenv("DEEPSEEK_API_KEY", ""))
-base_url = st.secrets.get("DEEPSEEK_BASE_URL", os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"))
+api_key = safe_secret_get("DEEPSEEK_API_KEY", "")
+base_url = safe_secret_get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 openai_client = OpenAI(api_key=api_key, base_url=base_url)
 
 if 'GLOBAL_MEMORY_MANAGER' not in st.session_state: 
