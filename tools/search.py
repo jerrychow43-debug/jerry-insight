@@ -44,7 +44,7 @@ def fetch_price_info(tavily_client, query: str):
     ]
     
     try:
-        res = tavily_client.search(query=price_query, search_depth="basic", max_results=6)
+        res = tavily_client.search(query=price_query, search_depth="basic", max_results=4)
         for r in res['results']:
             text = r['content']
             link = r['url']
@@ -105,7 +105,7 @@ def web_search_pro(query):
     blacklisted_domains = ["woshipm.com", "nowcoder.com", "podcasts.apple.com"]
     
     try:
-        res = tavily.search(query=refined_search_query, search_depth="advanced", max_results=8)
+        res = tavily.search(query=refined_search_query, search_depth="basic", max_results=5)
         
         for r in res['results']:
             link = r['url']
@@ -118,23 +118,11 @@ def web_search_pro(query):
             if len(query) <= 2 and any(x in r['content'] for x in ["海淘", "转运", "旅游", "导游", "线路"]):
                 continue
 
-            if any(domain in link for domain in ["smzdm.com", "zhihu.com"]):
-                paragraphs = [p.strip() for p in r['content'].split("\n") if len(p.strip()) > 20]
-                for p in paragraphs: raw_blocks.append((p, link))
-                continue
-
-            jina_url = f"https://r.jina.ai/{link}"
-            try:
-                headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-                resp = requests.get(jina_url, headers=headers, timeout=5)
-                if any(x in resp.text for x in ["验证码", "Security", "403 Forbidden"]) or len(resp.text) < 300:
-                    paragraphs = [p.strip() for p in r['content'].split("\n") if len(p.strip()) > 20]
-                else:
-                    paragraphs = [p.strip() for p in resp.text[:1500].split("\n") if len(p.strip()) > 30]
-            except:
-                paragraphs = [p.strip() for p in r['content'].split("\n") if len(p.strip()) > 20]
-                
-            for p in paragraphs: raw_blocks.append((p, link))
+            paragraphs = [p.strip() for p in r['content'].split("\n") if len(p.strip()) > 20]
+            if not paragraphs and r.get("content"):
+                paragraphs = [r["content"].strip()]
+            for p in paragraphs:
+                raw_blocks.append((p, link))
 
         if not raw_blocks:
             for r in res['results']: raw_blocks.append((r['content'], r['url']))

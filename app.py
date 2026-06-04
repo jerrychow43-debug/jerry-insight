@@ -63,7 +63,7 @@ def safe_secret_get(key, default=""):
 
 # 🤖 【钉钉通道安全注入】
 DINGTALK_WEBHOOK = safe_secret_get("DINGTALK_WEBHOOK", "")
-WEB_SEARCH_TIMEOUT_SECONDS = 15
+WEB_SEARCH_TIMEOUT_SECONDS = 25
 
 def send_dingtalk_worker_sync(title, markdown_content):
     if not DINGTALK_WEBHOOK:
