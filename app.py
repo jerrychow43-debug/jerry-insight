@@ -271,6 +271,25 @@ def summarize_trace_metrics(traces):
         "stage_rows": stage_rows,
     }
 
+def build_trace_stage_csv(traces):
+    rows = []
+    for trace in traces:
+        for stage in trace.get("stages", []):
+            rows.append({
+                "trace_id": trace.get("trace_id", ""),
+                "created_at": trace.get("created_at", ""),
+                "query": trace.get("query", ""),
+                "trace_status": trace.get("status", ""),
+                "total_latency_ms": trace.get("total_latency_ms", 0),
+                "stage": stage.get("name", ""),
+                "stage_status": stage.get("status", ""),
+                "stage_latency_ms": stage.get("latency_ms", 0),
+                "error_count": len(trace.get("errors", [])),
+            })
+    if not rows:
+        return ""
+    return pd.DataFrame(rows).to_csv(index=False, encoding="utf-8-sig")
+
 def is_undo_request(text):
     normalized = text.strip()
     undo_words = [
@@ -837,7 +856,8 @@ with st.sidebar:
 
     st.write("---")
     st.subheader("🧭 Agent Trace 观测")
-    recent_traces = load_recent_traces(limit=20)
+    export_traces = load_recent_traces(limit=200)
+    recent_traces = export_traces[:20]
     if recent_traces:
         trace_metrics = summarize_trace_metrics(recent_traces)
         metric_col1, metric_col2 = st.columns(2)
@@ -859,6 +879,25 @@ with st.sidebar:
             st.caption(f"状态：{latest_trace.get('status', 'unknown')} ｜ 总耗时：{latest_trace.get('total_latency_ms', 0)} ms")
             if latest_trace.get("errors"):
                 st.error(json.dumps(latest_trace["errors"], ensure_ascii=False))
+
+        trace_jsonl = "\n".join(json.dumps(trace, ensure_ascii=False) for trace in export_traces)
+        trace_csv = build_trace_stage_csv(export_traces)
+        dl_col1, dl_col2 = st.columns(2)
+        dl_col1.download_button(
+            "下载 JSONL",
+            data=trace_jsonl,
+            file_name="jerry_trace_logs.jsonl",
+            mime="application/json",
+            use_container_width=True,
+        )
+        dl_col2.download_button(
+            "下载 CSV",
+            data=trace_csv,
+            file_name="jerry_trace_stage_metrics.csv",
+            mime="text/csv",
+            use_container_width=True,
+            disabled=not bool(trace_csv),
+        )
     else:
         st.caption("暂无 Trace。运行一次商品问价后会自动生成。")
 
