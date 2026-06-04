@@ -228,6 +228,49 @@ def save_trace_log(trace):
     except Exception as err:
         print(f"Trace 保存失败: {err}")
 
+def load_recent_traces(limit=20):
+    if not os.path.exists(TRACE_FILE):
+        return []
+
+    with FILE_LOCK:
+        try:
+            with open(TRACE_FILE, "r", encoding="utf-8") as f:
+                lines = [line.strip() for line in f.readlines() if line.strip()]
+        except Exception as err:
+            print(f"Trace 读取失败: {err}")
+            return []
+
+    traces = []
+    for line in lines[-limit:]:
+        try:
+            traces.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return list(reversed(traces))
+
+def summarize_trace_metrics(traces):
+    ok_traces = [trace for trace in traces if trace.get("status") == "ok"]
+    latencies = [float(trace.get("total_latency_ms", 0)) for trace in ok_traces if trace.get("total_latency_ms")]
+    stage_rows = []
+
+    for trace in traces:
+        for stage in trace.get("stages", []):
+            stage_rows.append({
+                "问题": trace.get("query", "")[:24],
+                "阶段": stage.get("name", "unknown"),
+                "状态": stage.get("status", "ok"),
+                "耗时(ms)": stage.get("latency_ms", 0),
+            })
+
+    return {
+        "total": len(traces),
+        "ok": len(ok_traces),
+        "avg_latency": round(float(np.mean(latencies)), 2) if latencies else 0.0,
+        "max_latency": round(float(np.max(latencies)), 2) if latencies else 0.0,
+        "error_count": sum(len(trace.get("errors", [])) for trace in traces),
+        "stage_rows": stage_rows,
+    }
+
 def is_undo_request(text):
     normalized = text.strip()
     undo_words = [
@@ -791,6 +834,33 @@ with st.sidebar:
             else: st.caption("暂无历史放行记录")
     except: 
         st.caption("看板数据同步中...")
+
+    st.write("---")
+    st.subheader("🧭 Agent Trace 观测")
+    recent_traces = load_recent_traces(limit=20)
+    if recent_traces:
+        trace_metrics = summarize_trace_metrics(recent_traces)
+        metric_col1, metric_col2 = st.columns(2)
+        metric_col1.metric("最近 Trace", trace_metrics["total"])
+        metric_col2.metric("成功闭环", trace_metrics["ok"])
+        metric_col3, metric_col4 = st.columns(2)
+        metric_col3.metric("平均耗时", f"{trace_metrics['avg_latency']} ms")
+        metric_col4.metric("异常数", trace_metrics["error_count"])
+
+        with st.expander("查看阶段耗时明细", expanded=False):
+            if trace_metrics["stage_rows"]:
+                st.dataframe(pd.DataFrame(trace_metrics["stage_rows"]), hide_index=True, use_container_width=True)
+            else:
+                st.caption("暂无阶段明细")
+
+        latest_trace = recent_traces[0]
+        with st.expander("最近一次 Agent 链路", expanded=False):
+            st.caption(f"问题：{latest_trace.get('query', '')}")
+            st.caption(f"状态：{latest_trace.get('status', 'unknown')} ｜ 总耗时：{latest_trace.get('total_latency_ms', 0)} ms")
+            if latest_trace.get("errors"):
+                st.error(json.dumps(latest_trace["errors"], ensure_ascii=False))
+    else:
+        st.caption("暂无 Trace。运行一次商品问价后会自动生成。")
 
 st.title("🛡️省钱智探agent")
 dynamic_profile = get_dynamic_profile()
