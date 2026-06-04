@@ -39,6 +39,7 @@ st.set_page_config(page_title="Jerry-Insight Pro v3.5+", layout="wide", page_ico
 # 全局文件互斥锁，确保本地账本 I/O 数据不发生 Data Race
 FILE_LOCK = threading.Lock()
 PROFILE_FILE = "jerry_profile.json"
+LEDGER_FILE = "jerry_ledger.json"
 
 if 'ASYNC_EXECUTOR' not in st.session_state:
     st.session_state['ASYNC_EXECUTOR'] = ThreadPoolExecutor(max_workers=8)
@@ -104,10 +105,146 @@ def update_profile_balance(amount, item_name):
 
 mcp_gateway = JerryMcpServer(update_profile_balance, FILE_LOCK)
 
+def load_ledger_entries():
+    if not os.path.exists(LEDGER_FILE):
+        return []
+    try:
+        with open(LEDGER_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except Exception as err:
+        print(f"流水读取失败: {err}")
+        return []
+
+def save_ledger_entries(entries):
+    try:
+        with FILE_LOCK:
+            with open(LEDGER_FILE, "w", encoding="utf-8") as f:
+                json.dump(entries[-300:], f, ensure_ascii=False, indent=2)
+    except Exception as err:
+        print(f"流水保存失败: {err}")
+
+def append_ledger_entry(item, amount, source, raw_query):
+    entries = load_ledger_entries()
+    entry = {
+        "id": f"{int(time.time())}_{len(entries) + 1}",
+        "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+        "item": item,
+        "amount": round(float(amount), 2),
+        "source": source,
+        "raw_query": raw_query,
+        "status": "active"
+    }
+    entries.append(entry)
+    save_ledger_entries(entries)
+    return entry
+
+def is_undo_request(text):
+    normalized = text.strip()
+    undo_words = [
+        "撤销上一笔", "撤销上一条", "撤销上次", "撤销刚才",
+        "退回上一笔", "退回上一条", "取消上一笔", "取消上一条",
+        "上一笔记错了", "上一条记错了", "加错了"
+    ]
+    return any(word in normalized for word in undo_words)
+
+def execute_undo_last_expense(query_text):
+    entries = load_ledger_entries()
+    target_index = None
+    target_entry = None
+    for idx in range(len(entries) - 1, -1, -1):
+        entry = entries[idx]
+        if entry.get("status") == "active" and float(entry.get("amount", 0)) > 0:
+            target_index = idx
+            target_entry = entry
+            break
+
+    if target_entry is None:
+        return "暂时没有可以撤销的上一笔支出。"
+
+    amount = round(float(target_entry["amount"]), 2)
+    item = target_entry.get("item", "未命名消费")
+    profile = get_dynamic_profile()
+    profile["current_surplus"] = round(profile["current_surplus"] + amount, 2)
+    with open(PROFILE_FILE, "w", encoding="utf-8") as f:
+        json.dump(profile, f, ensure_ascii=False, indent=4)
+
+    entries[target_index]["status"] = "cancelled"
+    entries[target_index]["cancelled_at"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    entries[target_index]["cancel_query"] = query_text
+    save_ledger_entries(entries)
+
+    reply = (
+        f"↩️ 已撤销上一笔支出：【{item}】 {amount} 元。\n\n"
+        f"当前剩余预算：{profile['current_surplus']} 元。"
+    )
+    st.session_state['ASYNC_EXECUTOR'].submit(
+        async_push_notification,
+        (
+            f"### Jerry-Insight 撤销上一笔成功\n\n"
+            f"- 撤销项目：`{item}`\n"
+            f"- 退回金额：`{amount}` 元\n"
+            f"- 当前余额：`{profile['current_surplus']}` 元"
+        ),
+        "Jerry-Insight 撤销上一笔通知",
+    )
+    return reply
+
+def parse_refund_input(text):
+    normalized = text.strip()
+    if not any(word in normalized for word in ["加回来", "加回", "退回", "补回", "返还", "退钱", "退了"]):
+        return None
+    amount_match = re.search(r'[￥¥]?\s*(\d+(?:\.\d+)?)\s*(?:元|块|块钱|rmb|RMB)', normalized)
+    if not amount_match:
+        return None
+
+    amount = round(float(amount_match.group(1)), 2)
+    item_text = normalized
+    item_text = re.sub(r'[￥¥]?\s*\d+(?:\.\d+)?\s*(?:元|块|块钱|rmb|RMB)', '', item_text)
+    item_text = re.sub(r'(加回来|加回|退回|补回|返还|退钱|退了|给我|把|余额)', '', item_text)
+    item_text = re.sub(r'[，。,.\s]+', '', item_text)
+    item_text = item_text or "余额修正"
+    return {"item": item_text, "amount": amount}
+
+def execute_refund_adjustment(query_text, item, amount):
+    profile = get_dynamic_profile()
+    profile["current_surplus"] = round(profile["current_surplus"] + amount, 2)
+    with open(PROFILE_FILE, "w", encoding="utf-8") as f:
+        json.dump(profile, f, ensure_ascii=False, indent=4)
+
+    entries = load_ledger_entries()
+    entries.append({
+        "id": f"refund_{int(time.time())}_{len(entries) + 1}",
+        "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+        "item": item,
+        "amount": round(float(amount), 2),
+        "source": "manual_refund",
+        "raw_query": query_text,
+        "status": "refund"
+    })
+    save_ledger_entries(entries)
+
+    reply = (
+        f"✅ 已加回余额：【{item}】 {amount} 元。\n\n"
+        f"当前剩余预算：{profile['current_surplus']} 元。"
+    )
+    st.session_state['ASYNC_EXECUTOR'].submit(
+        async_push_notification,
+        (
+            f"### Jerry-Insight 余额加回成功\n\n"
+            f"- 修正项目：`{item}`\n"
+            f"- 加回金额：`{amount}` 元\n"
+            f"- 当前余额：`{profile['current_surplus']}` 元"
+        ),
+        "Jerry-Insight 余额加回通知",
+    )
+    return reply
+
 
 def record_direct_expense(item_name, amount, source_query=""):
     update_profile_balance(float(amount), item_name)
     profile = get_dynamic_profile()
+    append_ledger_entry(item_name, amount, "direct_accounting", source_query)
     reply = (
         f"已直接记账：{item_name}，支出 {amount} 元。\n\n"
         f"当前剩余预算：{profile['current_surplus']} 元。\n\n"
@@ -321,6 +458,23 @@ query = st.chat_input("输入商品名称...")
 if query and query.strip():
     with st.chat_message("user"): st.write(query)
 
+    if is_undo_request(query):
+        reply_text = execute_undo_last_expense(query)
+        save_chat_history(query, "UNDO_EXPENSE", assistant_reply=reply_text)
+        st.session_state['HISTORY_SESSIONS'] = load_recent_chat_history(20)
+        with st.chat_message("assistant"):
+            st.markdown(reply_text)
+        st.stop()
+
+    refund_adjustment = parse_refund_input(query)
+    if refund_adjustment:
+        reply_text = execute_refund_adjustment(query, refund_adjustment["item"], refund_adjustment["amount"])
+        save_chat_history(query, "REFUND_ADJUSTMENT", assistant_reply=reply_text, item_name=refund_adjustment["item"], amount=refund_adjustment["amount"])
+        st.session_state['HISTORY_SESSIONS'] = load_recent_chat_history(20)
+        with st.chat_message("assistant"):
+            st.markdown(reply_text)
+        st.stop()
+
     parsed_intent = classify_user_intent(query)
     if parsed_intent.intent in ("HELP_OR_META", "SMALLTALK_OR_OTHER", "INVALID"):
         reply_text = parsed_intent.reply or "我主要负责消费审计、价格查询和记账。你可以说：我想买某个商品，帮我看看值不值。"
@@ -432,6 +586,7 @@ if st.session_state['LAST_AUDIT']:
             "id": 1
         })
         mcp_gateway.handle_json_rpc(rpc_payload)
+        append_ledger_entry(audit_item, audit_price, "audit_confirm", audit_item)
         
         current_profile = get_dynamic_profile()
         

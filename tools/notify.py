@@ -30,8 +30,11 @@ def push_wechat(content):
 
 def push_dingtalk(content, title="🛡️ Jerry-Insight 风控通报"):
     """标准的钉钉群机器人推送（原生通道，极速稳定，全面兼容云端配置）"""
-    # 💡 完美对齐：优先读取你截图里的 DING_WEBHOOK，自动兼容云端 Secrets 和本地系统环境
-    webhook_url = st.secrets.get("DING_WEBHOOK", os.getenv("DING_WEBHOOK"))
+    # 兼容云端主版的 DINGTALK_WEBHOOK，以及旧本地版的 DING_WEBHOOK。
+    webhook_url = (
+        st.secrets.get("DINGTALK_WEBHOOK", os.getenv("DINGTALK_WEBHOOK"))
+        or st.secrets.get("DING_WEBHOOK", os.getenv("DING_WEBHOOK"))
+    )
     if not webhook_url:
         print("【钉钉推送】未配置 DING_WEBHOOK，通知放弃发送")
         return "未配置 DING_WEBHOOK"

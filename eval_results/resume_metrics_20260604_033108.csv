@@ -1,0 +1,39 @@
+﻿category,input,expected_intent,actual_intent,intent_correct,expected_amount,actual_amount,amount_correct,operation_success,balance_before,balance_after,latency_ms
+help,怎么用,HELP,HELP,True,,,True,True,1000.0,1000.0,0.0357
+help,你能干嘛,HELP,HELP,True,,,True,True,1000.0,1000.0,0.0115
+help,有什么功能,HELP,HELP,True,,,True,True,1000.0,1000.0,0.0147
+help,帮助,HELP,HELP,True,,,True,True,1000.0,1000.0,0.0058
+smalltalk,你好,GENERAL_REPLY,GENERAL_REPLY,True,,,True,True,1000.0,1000.0,0.0069
+smalltalk,谢谢,GENERAL_REPLY,GENERAL_REPLY,True,,,True,True,1000.0,1000.0,0.0065
+shopping,我想买可乐,SHOPPING,SHOPPING,True,,,True,True,1000.0,1000.0,0.0079
+shopping,帮我看看 iPhone 15 值不值得买,SHOPPING,SHOPPING,True,,,True,True,1000.0,1000.0,0.0091
+shopping,可乐多少钱,SHOPPING,SHOPPING,True,,,True,True,1000.0,1000.0,0.0071
+shopping,我想买一瓶雪碧,SHOPPING,SHOPPING,True,,,True,True,1000.0,1000.0,0.0086
+shopping,帮我看看这个耳机贵不贵,SHOPPING,SHOPPING,True,,,True,True,1000.0,1000.0,0.0079
+shopping,我想买一台服务器 2g 内存的,SHOPPING,SHOPPING,True,,,True,True,1000.0,1000.0,0.008
+shopping,帮我比价一下红米耳机,SHOPPING,SHOPPING,True,,,True,True,1000.0,1000.0,0.0077
+shopping,这个 MacBook 值不值得入手,SHOPPING,SHOPPING,True,,,True,True,1000.0,1000.0,0.0086
+shopping,我想买东方树叶,SHOPPING,SHOPPING,True,,,True,True,1000.0,1000.0,0.0067
+direct_accounting,买了雪碧花了3块,DIRECT_ACCOUNTING,DIRECT_ACCOUNTING,True,3.0,3.0,True,True,1000.0,997.0,0.2813
+direct_accounting,今天花12.5元买午饭,DIRECT_ACCOUNTING,SHOPPING,False,12.5,,False,True,997.0,997.0,0.0115
+direct_accounting,消费了8元咖啡,DIRECT_ACCOUNTING,DIRECT_ACCOUNTING,True,8.0,8.0,True,True,997.0,989.0,0.0109
+direct_accounting,买了可乐花了3块钱,DIRECT_ACCOUNTING,DIRECT_ACCOUNTING,True,3.0,3.0,True,True,989.0,986.0,0.0083
+direct_accounting,已经买了纸巾花了6元,DIRECT_ACCOUNTING,DIRECT_ACCOUNTING,True,6.0,6.0,True,True,986.0,980.0,0.0074
+direct_accounting,刚才付了18元打车,DIRECT_ACCOUNTING,DIRECT_ACCOUNTING,True,18.0,18.0,True,True,980.0,962.0,0.0073
+direct_accounting,支出25元买书,DIRECT_ACCOUNTING,DIRECT_ACCOUNTING,True,25.0,25.0,True,True,962.0,937.0,0.0068
+refund,加回来3块,REFUND,REFUND,True,3.0,3.0,True,True,937.0,940.0,0.1265
+refund,退回雪碧3元,REFUND,REFUND,True,3.0,3.0,True,True,940.0,943.0,0.0079
+refund,补回500元,REFUND,REFUND,True,500.0,500.0,True,True,943.0,1443.0,0.0059
+refund,把余额加回10块,REFUND,REFUND,True,10.0,10.0,True,True,1443.0,1453.0,0.0055
+refund,退钱12.5元,REFUND,REFUND,True,12.5,12.5,True,True,1453.0,1465.5,0.0055
+undo,撤销上一笔,UNDO,UNDO,True,,,True,True,1465.5,1490.5,0.0054
+undo,撤销上一条,UNDO,UNDO,True,,,True,True,1490.5,1508.5,0.0032
+undo,撤销上次,UNDO,UNDO,True,,,True,True,1508.5,1514.5,0.0025
+undo,撤销刚才,UNDO,UNDO,True,,,True,True,1514.5,1517.5,0.0024
+undo,退回上一笔,UNDO,UNDO,True,,,True,True,1517.5,1525.5,0.0022
+undo,取消上一条,UNDO,UNDO,True,,,True,True,1525.5,1528.5,0.003
+undo,上一笔记错了,UNDO,UNDO,True,,,True,False,1528.5,1528.5,0.0024
+undo,加错了,UNDO,UNDO,True,,,True,False,1528.5,1528.5,0.002
+general,今天心情不好,SHOPPING,SHOPPING,True,,,True,True,1528.5,1528.5,0.0102
+general,随便问一句天气怎么样,SHOPPING,SHOPPING,True,,,True,True,1528.5,1528.5,0.0085
+general,111111,SHOPPING,SHOPPING,True,,,True,True,1528.5,1528.5,0.0065

@@ -103,6 +103,7 @@ FILE_LOCK = threading.Lock()
 PROFILE_FILE = "jerry_profile.json"
 HISTORY_FILE = "jerry_history_sessions.json"
 LEDGER_FILE = "jerry_ledger.json"
+TRACE_FILE = "jerry_trace_logs.jsonl"
 
 @st.cache_resource
 def init_chroma_and_inject_profiles():
@@ -189,6 +190,37 @@ def append_ledger_entry(item, price, source, raw_query):
     entries.append(entry)
     save_ledger_entries(entries)
     return entry
+
+def new_trace(query_text):
+    return {
+        "trace_id": f"trace_{int(time.time() * 1000)}",
+        "query": query_text,
+        "created_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+        "stages": [],
+        "status": "running",
+        "errors": []
+    }
+
+def trace_stage(trace, name, started_at, status="ok", **extra):
+    if not trace:
+        return
+    item = {
+        "name": name,
+        "status": status,
+        "latency_ms": round((time.perf_counter() - started_at) * 1000, 2)
+    }
+    item.update(extra)
+    trace["stages"].append(item)
+
+def save_trace_log(trace):
+    if not trace:
+        return
+    try:
+        with FILE_LOCK:
+            with open(TRACE_FILE, "a", encoding="utf-8") as f:
+                f.write(json.dumps(trace, ensure_ascii=False) + "\n")
+    except Exception as err:
+        print(f"Trace 保存失败: {err}")
 
 def is_undo_request(text):
     normalized = text.strip()
@@ -308,7 +340,7 @@ def execute_refund_adjustment(query_text, item, amount):
 def parse_direct_accounting_input(text):
     """识别“已经买了并花了多少钱”的输入；想买/问价不走这里。"""
     normalized = text.strip()
-    has_done_signal = any(word in normalized for word in ["买了", "花了", "消费了", "付了", "付款", "支出", "用了"])
+    has_done_signal = any(word in normalized for word in ["买了", "花了", "花", "消费了", "付了", "付款", "支出", "用了"])
     has_future_signal = any(word in normalized for word in ["想买", "准备买", "打算买", "要不要买", "值不值得", "多少钱", "问价"])
     if not has_done_signal or has_future_signal:
         return None
@@ -515,35 +547,57 @@ class JerryAgentHarness:
 # 👑 4. FSM 状态机托管管道
 # ==========================================================
 def run_fsm_scout_pipeline(query, status_widget):
+    trace = new_trace(query)
     fsm = JerryFSMAgent()
+    pipeline_started = time.perf_counter()
+
+    stage_started = time.perf_counter()
     fsm.transition_to("INTENT_CHECK")
-    if classify_intent(query) == "INVALID":
+    intent = classify_intent(query)
+    trace_stage(trace, "intent_check", stage_started, intent=intent)
+    if intent == "INVALID":
         fsm.transition_to("END")
-        return "INVALID_INTENT", None, None, None, None, ""
+        trace["status"] = "invalid_intent"
+        trace["total_latency_ms"] = round((time.perf_counter() - pipeline_started) * 1000, 2)
+        save_trace_log(trace)
+        return "INVALID_INTENT", None, None, None, None, "", trace
 
     fsm.transition_to("PRICE_SCOUT")
+    stage_started = time.perf_counter()
     clean_keyword = clean_query_to_entity(query)
+    trace_stage(trace, "entity_extract", stage_started, entity=clean_keyword)
     
     future_memory = st.session_state['ASYNC_EXECUTOR'].submit(hybrid_retriever.retrieve_and_rerank, query)
     future_web = st.session_state['ASYNC_EXECUTOR'].submit(web_search_pro, clean_keyword)
     future_crawler = st.session_state['ASYNC_EXECUTOR'].submit(crawl_smzdm_price, clean_keyword)
     
     try:
+        stage_started = time.perf_counter()
         existing_data = memory_collection.get()
         if not existing_data or not existing_data.get("ids") or len(existing_data["ids"]) == 0:
             long_term_context = "暂无历史档案存证。"
+            trace_stage(trace, "rag_retrieve", stage_started, status="empty")
         else:
             long_term_context = future_memory.result()
+            trace_stage(trace, "rag_retrieve", stage_started, context_chars=len(long_term_context or ""))
     except Exception as chroma_err:
         long_term_context = "历史档案加载隔离状态。" 
+        trace["errors"].append({"stage": "rag_retrieve", "error": str(chroma_err)})
+        trace_stage(trace, "rag_retrieve", stage_started, status="fallback")
 
+    stage_started = time.perf_counter()
     raw_info_blocks, raw_info_text, price_table_data = future_web.result()
+    trace_stage(trace, "web_search", stage_started, result_count=len(raw_info_blocks or []))
     
     crawler_results = None
+    stage_started = time.perf_counter()
     try:
         crawler_results = future_crawler.result(timeout=2.5)
+        trace_stage(trace, "price_crawler", stage_started, result_count=len(crawler_results or []))
     except Exception as t_e:
         print(f"⚠️ 爬虫响应超时: {t_e}")
+        trace["errors"].append({"stage": "price_crawler", "error": str(t_e)})
+        trace_stage(trace, "price_crawler", stage_started, status="timeout")
     
     if crawler_results:
         raw_info_text = f"【什么值得买精选行情】:\n" + "\n".join([item["price_info"] for item in crawler_results]) + "\n\n" + raw_info_text
@@ -554,9 +608,14 @@ def run_fsm_scout_pipeline(query, status_widget):
     st.session_state['GLOBAL_MEMORY_MANAGER'].add_message("user", query)
     memory_ctx = st.session_state['GLOBAL_MEMORY_MANAGER'].get_compiled_context()
     
+    stage_started = time.perf_counter()
     raw_answer = JerryAgentHarness().run_harness(clean_keyword, raw_info_text, get_dynamic_profile(), long_term_context, memory_ctx, status_widget)
+    trace_stage(trace, "llm_audit", stage_started, answer_chars=len(raw_answer or ""))
     fsm.transition_to("END")
-    return raw_answer, clean_keyword, info_blocks, price_table_data, crawler_results, long_term_context
+    trace["status"] = "ok"
+    trace["total_latency_ms"] = round((time.perf_counter() - pipeline_started) * 1000, 2)
+    save_trace_log(trace)
+    return raw_answer, clean_keyword, info_blocks, price_table_data, crawler_results, long_term_context, trace
 
 
 # =======================================================================
@@ -662,6 +721,9 @@ with st.sidebar:
             except: pass
         if os.path.exists(LEDGER_FILE):
             try: os.remove(LEDGER_FILE)
+            except: pass
+        if os.path.exists(TRACE_FILE):
+            try: os.remove(TRACE_FILE)
             except: pass
         st.session_state['LAST_AUDIT'] = None
         st.session_state["active_query"] = None
@@ -843,7 +905,7 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
     with st.chat_message("assistant"):
         status = st.status("🛸 Jerry-Scout 正在通过 FSM 状态机进行多维调度...", expanded=True)
         try:
-            raw_answer, clean_keyword, info_blocks, price_table_data, crawler_results, long_term_context = run_fsm_scout_pipeline(query_text, status)
+            raw_answer, clean_keyword, info_blocks, price_table_data, crawler_results, long_term_context, trace_data = run_fsm_scout_pipeline(query_text, status)
             
             if raw_answer == "INVALID_INTENT":
                 status.update(label="🚨 监测到非业务输入。", state="error", expanded=False)
@@ -899,7 +961,8 @@ if chat_query and chat_query.strip() and not st.session_state['SUBMIT_PROCESSING
                 "info_blocks": info_blocks,
                 "price_table_data": price_table_data,
                 "crawler_results": crawler_results,
-                "long_term_context": long_term_context
+                "long_term_context": long_term_context,
+                "trace": trace_data
             }
 
             result_notice_content = (
