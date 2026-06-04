@@ -9,7 +9,7 @@ import pandas as pd
 import streamlit as st
 import requests  
 from openai import OpenAI
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 
 # =====================================================================
 # 🔒 1. 全局配置与环境初始化
@@ -63,6 +63,7 @@ def safe_secret_get(key, default=""):
 
 # 🤖 【钉钉通道安全注入】
 DINGTALK_WEBHOOK = safe_secret_get("DINGTALK_WEBHOOK", "")
+WEB_SEARCH_TIMEOUT_SECONDS = 15
 
 def send_dingtalk_worker_sync(title, markdown_content):
     if not DINGTALK_WEBHOOK:
@@ -569,7 +570,17 @@ class JerryAgentHarness:
                 elif parsed_json.get("action") == "Call_Web_Search":
                     search_kw = parsed_json.get("action_input")
                     if status_widget: status_widget.write(f"🔍 触发多路追查，深度搜索: `{search_kw}`...")
-                    _, search_feedback_text, _ = web_search_pro(search_kw)
+                    try:
+                        search_future = st.session_state['ASYNC_EXECUTOR'].submit(web_search_pro, search_kw)
+                        _, search_feedback_text, _ = search_future.result(timeout=WEB_SEARCH_TIMEOUT_SECONDS)
+                    except FutureTimeoutError:
+                        search_feedback_text = (
+                            f"二次外部搜索超过 {WEB_SEARCH_TIMEOUT_SECONDS} 秒未返回。请基于已有情报直接收敛，不要继续调用搜索。"
+                        )
+                        if status_widget:
+                            status_widget.write(f"⏱️ 二次搜索超过 {WEB_SEARCH_TIMEOUT_SECONDS} 秒，已要求模型收敛。")
+                    except Exception as search_err:
+                        search_feedback_text = f"二次外部搜索异常：{search_err}。请基于已有情报直接收敛。"
                     conversation_history.append({"role": "assistant", "content": raw_output})
                     conversation_history.append({"role": "user", "content": f"【追查情报反馈】：\n{search_feedback_text[:1200]}"})
             except Exception as e:
@@ -654,8 +665,25 @@ def run_fsm_scout_pipeline(query, status_widget):
         trace_stage(trace, "rag_retrieve", stage_started, status="fallback")
 
     stage_started = time.perf_counter()
-    raw_info_blocks, raw_info_text, price_table_data = future_web.result()
-    trace_stage(trace, "web_search", stage_started, result_count=len(raw_info_blocks or []))
+    try:
+        raw_info_blocks, raw_info_text, price_table_data = future_web.result(timeout=WEB_SEARCH_TIMEOUT_SECONDS)
+        trace_stage(trace, "web_search", stage_started, result_count=len(raw_info_blocks or []))
+    except FutureTimeoutError:
+        raw_info_blocks = []
+        raw_info_text = (
+            f"外部 Web Search 超过 {WEB_SEARCH_TIMEOUT_SECONDS} 秒未返回，本次审计将基于历史偏好、价格爬虫和模型常识继续生成。"
+        )
+        price_table_data = [{"平台": "外部搜索超时", "参考报价/情报说明": "本次未等待到 Web Search 返回", "数据出处": ""}]
+        trace["errors"].append({"stage": "web_search", "error": f"timeout after {WEB_SEARCH_TIMEOUT_SECONDS}s"})
+        trace_stage(trace, "web_search", stage_started, status="timeout", result_count=0)
+        if status_widget:
+            status_widget.write(f"⏱️ 外部搜索超过 {WEB_SEARCH_TIMEOUT_SECONDS} 秒，已降级继续审计。")
+    except Exception as web_err:
+        raw_info_blocks = []
+        raw_info_text = f"外部 Web Search 异常：{web_err}。本次审计将基于历史偏好、价格爬虫和模型常识继续生成。"
+        price_table_data = [{"平台": "外部搜索异常", "参考报价/情报说明": "Web Search 未成功返回", "数据出处": ""}]
+        trace["errors"].append({"stage": "web_search", "error": str(web_err)})
+        trace_stage(trace, "web_search", stage_started, status="fallback", result_count=0)
     
     crawler_results = None
     stage_started = time.perf_counter()
