@@ -11,3 +11,8 @@ eval_results/
 rendered_resume/
 agent_resume_*.docx
 ~$*.docx
+fullstack_agent/backend/agent_history.db
+fullstack_agent/backend/fullstack_trace_logs.jsonl
+fullstack_agent/frontend/node_modules/
+fullstack_agent/frontend/.npm-cache/
+fullstack_agent/frontend/dist/
