@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, List
 
+from .artifact_store import write_artifacts
 from .models import AgentStep, Artifact, CrewTask, PriceCandidate
 from .skills import read_local_knowledge, search_price_candidates, summarize_ledger
 
@@ -77,12 +78,44 @@ class WriterAgent:
 
     def run(self, task: CrewTask, research: Dict[str, Any], analysis: Dict[str, Any]) -> Dict[str, Any]:
         start = time.perf_counter()
-        content = self._compose(task, research, analysis)
-        artifact = Artifact(title=f"{task.title} - Agent 输出", kind="markdown", content=content)
-        task.artifacts.append(artifact)
-        task.final_answer = content
-        task.steps.append(_step(self.name, "compose_artifact", "已生成结构化 Markdown 产物。", {"artifact_title": artifact.title}, start))
-        return {"artifact": artifact}
+        artifacts = self._compose_artifacts(task, research, analysis)
+        task.artifacts.extend(artifacts)
+        task.final_answer = artifacts[0].content if artifacts else ""
+        task.steps.append(
+            _step(
+                self.name,
+                "compose_artifacts",
+                f"已生成 {len(artifacts)} 个任务产物，不再只是聊天回复。",
+                {"artifact_titles": [artifact.title for artifact in artifacts]},
+                start,
+            )
+        )
+        return {"artifacts": artifacts}
+
+    def _compose_artifacts(self, task: CrewTask, research: Dict[str, Any], analysis: Dict[str, Any]) -> List[Artifact]:
+        if task.template_id == "saving_decision":
+            return [
+                Artifact(title="省钱决策报告", kind="markdown", content=self._saving_report(task, research, analysis)),
+                Artifact(title="候选价格看板", kind="markdown", content=self._price_board(task, research)),
+            ]
+        if task.template_id == "procurement_research":
+            return [
+                Artifact(title="采购调研报告", kind="markdown", content=self._procurement_report(task, research, analysis)),
+                Artifact(title="候选商品对比表", kind="markdown", content=self._procurement_table(task, research)),
+                Artifact(title="观察清单草稿", kind="json", content=self._watchlist_json(task, research)),
+            ]
+        if task.template_id == "interview_prep":
+            return [
+                Artifact(title="Agent 岗面试准备包", kind="markdown", content=self._interview_report(task, analysis)),
+                Artifact(title="模拟追问清单", kind="markdown", content=self._mock_questions(task)),
+                Artifact(title="项目讲法卡片", kind="markdown", content=self._project_pitch_card(task)),
+            ]
+        if task.template_id == "learning_digest":
+            return [
+                Artifact(title="学习复习计划", kind="markdown", content=self._learning_report(task, analysis)),
+                Artifact(title="复习卡片", kind="csv", content=self._flashcards_csv(task, analysis)),
+            ]
+        return [Artifact(title=f"{task.title} - Agent 输出", kind="markdown", content=f"# {task.title}\n\n目标：{task.goal}")]
 
     def _compose(self, task: CrewTask, research: Dict[str, Any], analysis: Dict[str, Any]) -> str:
         if task.template_id == "saving_decision":
@@ -101,6 +134,14 @@ class WriterAgent:
             source = f" 来源：{candidate.source_url}" if candidate.source_url else ""
             lines.append(f"{idx}. {candidate.source_title}：{candidate.price_text}，可信度 {candidate.confidence}。{source}")
         return "\n".join(lines) if lines else "暂无候选价格。"
+
+    def _price_board(self, task: CrewTask, research: Dict[str, Any]) -> str:
+        candidates = research.get("price_candidates", [])
+        rows = ["| 来源 | 候选价格 | 可信度 | 链接 |", "| --- | --- | --- | --- |"]
+        for candidate in candidates[:8]:
+            link = candidate.source_url or "无"
+            rows.append(f"| {candidate.source_title} | {candidate.price_text} | {candidate.confidence} | {link} |")
+        return f"# 候选价格看板\n\n目标：{task.goal}\n\n" + "\n".join(rows)
 
     def _saving_report(self, task: CrewTask, research: Dict[str, Any], analysis: Dict[str, Any]) -> str:
         candidates = research.get("price_candidates", [])
@@ -149,6 +190,31 @@ class WriterAgent:
 建议补充具体偏好，例如品牌、尺寸、是否接受二手、是否需要立即购买。随后可生成更细的候选对比表。
 """
 
+    def _procurement_table(self, task: CrewTask, research: Dict[str, Any]) -> str:
+        candidates = research.get("price_candidates", [])
+        rows = ["| 候选 | 价格信息 | 来源可信度 | 用途判断 |", "| --- | --- | --- | --- |"]
+        for idx, candidate in enumerate(candidates[:5], start=1):
+            rows.append(f"| 方案 {idx}: {candidate.source_title} | {candidate.price_text} | {candidate.confidence} | 需要人工打开来源核实参数和售后 |")
+        if not candidates:
+            rows.append("| 暂无 | 暂无 | low | 需要补充搜索 API 或手动候选 |")
+        return f"# 候选商品对比表\n\n采购目标：{task.goal}\n\n" + "\n".join(rows)
+
+    def _watchlist_json(self, task: CrewTask, research: Dict[str, Any]) -> str:
+        candidates = research.get("price_candidates", [])
+        items = []
+        for candidate in candidates[:5]:
+            items.append(
+                {
+                    "goal": task.goal,
+                    "source_title": candidate.source_title,
+                    "source_url": candidate.source_url,
+                    "price_text": candidate.price_text,
+                    "confidence": candidate.confidence,
+                    "next_action": "人工核实参数/价格后决定是否加入正式观察清单",
+                }
+            )
+        return __import__("json").dumps({"watchlist": items}, ensure_ascii=False, indent=2)
+
     def _interview_report(self, task: CrewTask, analysis: Dict[str, Any]) -> str:
         key_points = "\n".join(f"- {point}" for point in analysis.get("key_points", []))
         return f"""# 面试准备草稿
@@ -169,6 +235,39 @@ class WriterAgent:
 
 ## 回答方向
 强调你没有硬套概念，而是把工具执行、状态管理、可观测性和测试体系工程化。
+"""
+
+    def _mock_questions(self, task: CrewTask) -> str:
+        return f"""# 模拟追问清单
+
+目标：{task.goal}
+
+1. 你这个项目和普通聊天机器人有什么区别？
+2. 为什么要做 Skill Registry，而不是直接写函数？
+3. MCP 在你的项目里解决了什么问题？
+4. 如果面试官质疑多 Agent 牵强，你怎么回答？
+5. Agent 调错工具怎么办？
+6. 如何证明你的 Agent 不是靠感觉能跑？
+7. 你的 Trace 记录了哪些字段？
+8. 为什么省钱模块不继续硬爬电商平台？
+"""
+
+    def _project_pitch_card(self, task: CrewTask) -> str:
+        return f"""# 项目讲法卡片
+
+**一句话**：我做的是一个个人任务多智能体工作台，不是简单聊天框。
+
+**核心结构**：
+
+```text
+任务模板 -> ManagerAgent 拆任务 -> Research/Analyst/Writer/Reviewer/Executor 协作
+          -> Skill Registry / MCP 工具 -> Trace -> Artifact
+```
+
+**重点亮点**：
+- 多 Agent 是围绕任务产物分工，不是把小函数包装成 Agent。
+- Skills 负责具体动作，Agent 负责规划、分析、写作、审查和执行决策。
+- 省钱模块保留生活场景，但价格来源改为 Search API 候选结果，避免硬爬虫风险。
 """
 
     def _learning_report(self, task: CrewTask, analysis: Dict[str, Any]) -> str:
@@ -192,6 +291,15 @@ class WriterAgent:
 ## 输出建议
 把最终内容导出为 Markdown/PDF，并把薄弱点放进下一轮任务。
 """
+
+    def _flashcards_csv(self, task: CrewTask, analysis: Dict[str, Any]) -> str:
+        rows = ['question,answer,source']
+        for idx, point in enumerate(analysis.get("key_points", [])[:8], start=1):
+            clean = point.replace('"', "'").replace("\n", " ")
+            rows.append(f'"复习点 {idx}","{clean}","local_notes"')
+        if len(rows) == 1:
+            rows.append('"如何使用这个学习模板？","补充本地笔记后重新运行，系统会从文件中提取复习点。","system"')
+        return "\n".join(rows)
 
 
 class ReviewerAgent:
@@ -223,6 +331,8 @@ class ExecutorAgent:
         action = "prepare_artifact"
         summary = "已准备最终产物，可在页面中查看。"
         detail: Dict[str, Any] = {"artifact_count": len(task.artifacts)}
+        artifact_paths = write_artifacts(task)
+        detail["artifact_paths"] = artifact_paths
         if task.needs_approval:
             action = "prepare_approval"
             summary = "已创建待确认动作，当前 MVP 不自动写账本或发送外部通知。"
@@ -230,4 +340,3 @@ class ExecutorAgent:
         task.status = "needs_approval" if task.needs_approval else "completed"
         task.steps.append(_step(self.name, action, summary, detail, start))
         return detail
-

@@ -2,7 +2,14 @@
 
 个人任务多智能体工作台 MVP。
 
-这个目录是从原来的“省钱智探 Agent”拆出来的新方向：不再把产品做成一个普通聊天框，而是做成“任务模板 + 多 Agent 分工 + Skill Registry + Trace”的 Agent Workspace。
+这个目录是从原来的“省钱智探 Agent”拆出来的新方向：不再把产品做成一个普通聊天框，也不把几个 Prompt 包成“伪多 Agent”，而是做成“任务模板 + 多 Agent 分工 + Skill Registry + Trace + Artifact”的 Agent Workspace。
+
+核心判断：
+
+```text
+普通聊天：输入一句话，模型回答一句话。
+Agent Workspace：创建一个任务，多个 Agent 分工执行，最后产出报告/清单/文件/待确认动作。
+```
 
 ## 第一版四个功能模板
 
@@ -12,6 +19,8 @@
 | 采购调研 | 面向较复杂的购买任务，例如显示器、耳机、键盘对比 | 采购调研报告、候选来源、观察清单建议 |
 | 面试准备 | 读取项目和笔记，整理 Agent 岗面试话术和追问 | 面试回答稿、项目包装、追问清单 |
 | 学习资料整理 | 读取 Linux/C++/Agent 笔记，生成复习大纲 | 复习计划、知识点整理 |
+
+每个模板都有自己的任务表单和产物类型，不再共用一个“随便问”的聊天框。
 
 ## Agent Team
 
@@ -36,6 +45,23 @@ ledger_write_plan  创建待确认记账动作，不自动扣款
 ```
 
 省钱模块会参考主项目已有逻辑，但这版把 `price_crawler.py` 那种硬爬虫降级为非主路径，默认使用搜索引擎/API 摘要做候选价格来源。
+
+## Artifact 输出
+
+每次运行会在页面里展示产物，并写入：
+
+```text
+jerry_agent_crew/artifacts/<run_id>/
+```
+
+不同模板会生成不同产物：
+
+```text
+省钱计划：省钱决策报告、候选价格看板
+采购调研：采购调研报告、候选商品对比表、观察清单草稿
+面试准备：面试准备包、模拟追问清单、项目讲法卡片
+学习资料：复习计划、复习卡片 CSV
+```
 
 ## 运行
 
@@ -64,7 +90,7 @@ TAVILY_API_KEY=your_key
 新方向是：
 
 ```text
-任务模板 -> ManagerAgent 拆任务 -> 多 Agent 协作 -> Skill 调用 -> Trace -> 产物
+任务表单 -> ManagerAgent 拆任务 -> 多 Agent 协作 -> Skill 调用 -> Trace -> Artifacts
 ```
 
 旧的省钱能力会逐步迁移成 `省钱计划 / 消费决策` 模板下的 Skills 和数据工具。
@@ -76,4 +102,3 @@ TAVILY_API_KEY=your_key
 3. 增加任务持久化：`tasks.jsonl`。
 4. 增加 Approval Queue 页面，所有记账/通知类动作先确认再执行。
 5. 增加 Eval 数据集，测试四个模板的工具选择和输出质量。
-

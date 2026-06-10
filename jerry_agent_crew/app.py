@@ -53,6 +53,40 @@ def selected_template():
     return TASK_TEMPLATES[0]
 
 
+def render_task_form(template) -> str:
+    if template.template_id == "saving_decision":
+        product = st.text_input("商品/消费问题", value="东方树叶")
+        current_price = st.text_input("当前看到的价格", value="5 元")
+        context = st.text_input("场景", value="线下便利店，想判断现在买值不值")
+        return f"商品：{product}\n当前价格：{current_price}\n场景：{context}\n任务：判断是否值得购买，并说明是否需要记账确认。"
+
+    if template.template_id == "procurement_research":
+        item = st.text_input("要采购的东西", value="适合写代码的显示器")
+        budget = st.text_input("预算", value="1000 元以内")
+        requirements = st.text_area("硬性需求", value="护眼、27 寸左右、适合长时间写代码、售后稳定", height=90)
+        avoid = st.text_input("避雷点", value="不要只看最低价，要关注售后和真实评价")
+        return f"采购目标：{item}\n预算：{budget}\n硬性需求：{requirements}\n避雷点：{avoid}\n任务：生成候选对比、观察清单和购买建议。"
+
+    if template.template_id == "interview_prep":
+        role = st.text_input("目标岗位", value="Agent / AI Native 应用开发岗位")
+        focus = st.multiselect(
+            "重点话题",
+            ["MCP", "多 Agent", "Dify / Coze / OpenClaw", "Skill Registry", "Trace / Eval", "省钱智探项目包装"],
+            default=["MCP", "多 Agent", "Dify / Coze / OpenClaw", "Trace / Eval"],
+        )
+        weak = st.text_area("你担心被问倒的地方", value="多 Agent 是否牵强，MCP 和普通工具有什么区别，项目为什么不只是聊天框。", height=90)
+        return f"目标岗位：{role}\n重点话题：{', '.join(focus)}\n担心点：{weak}\n任务：生成面试准备包、模拟追问清单和项目讲法卡片。"
+
+    if template.template_id == "learning_digest":
+        topics = st.text_input("学习主题", value="Linux 网络 + C++ 面试基础")
+        days = st.number_input("计划天数", min_value=1, max_value=30, value=7)
+        daily_minutes = st.number_input("每天可学习分钟数", min_value=15, max_value=480, value=90, step=15)
+        output = st.text_input("希望输出", value="复习大纲、每日计划、复习卡片")
+        return f"学习主题：{topics}\n计划天数：{days}\n每天时间：{daily_minutes} 分钟\n希望输出：{output}\n任务：读取本地笔记并生成复习计划和卡片。"
+
+    return st.text_area("任务目标", value=template.example_goal, height=110)
+
+
 def render_run(task_dict: dict) -> None:
     st.markdown(f"### {task_dict['title']}")
     st.caption(f"Run ID: `{task_dict['run_id']}` · Status: `{task_dict['status']}` · Created: {task_dict['created_at']}")
@@ -73,6 +107,8 @@ def render_run(task_dict: dict) -> None:
         for artifact in task_dict.get("artifacts", []):
             st.markdown(f"#### {artifact['title']}")
             st.caption(artifact["kind"])
+            if artifact.get("metadata", {}).get("path"):
+                st.code(artifact["metadata"]["path"], language="text")
             st.markdown(artifact["content"])
     with raw_tab:
         st.json(task_dict)
@@ -93,12 +129,7 @@ def main() -> None:
     with left:
         st.subheader("创建任务")
         st.markdown(f"当前模板：**{template.name}**")
-        goal = st.text_area(
-            "任务目标",
-            value=template.example_goal,
-            height=110,
-            help="输入一个目标，系统会由 ManagerAgent 拆解，再交给不同 Agent 协作。",
-        )
+        goal = render_task_form(template)
         if st.button("运行 Agent Crew", type="primary", use_container_width=True):
             runtime = AgentCrewRuntime()
             task = runtime.run(selected, goal)
@@ -126,4 +157,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
