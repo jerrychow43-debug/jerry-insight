@@ -307,6 +307,34 @@ h1 {
   gap: 14px;
 }
 
+.summary-card {
+  display: grid;
+  grid-template-columns: 0.7fr 0.7fr 0.7fr 1.3fr 1.3fr;
+  gap: 10px;
+  padding: 12px;
+  margin-bottom: 14px;
+  border: 1px solid #cfe8e2;
+  border-radius: 8px;
+  background: #f0fbf8;
+}
+
+.summary-card div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.summary-card small {
+  color: #51776f;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.summary-card strong {
+  color: #143b36;
+  line-height: 1.45;
+}
+
 .run-columns h3 {
   margin-bottom: 8px;
   font-size: 14px;
@@ -325,6 +353,26 @@ h1 {
 .mini-block small {
   color: #8792a3;
   font-size: 12px;
+}
+
+.trace-step {
+  background: #ffffff;
+}
+
+.tool-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 5px;
+}
+
+.tool-chip-row span {
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: #eef7f6;
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .report-box {

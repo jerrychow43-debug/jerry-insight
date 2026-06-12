@@ -100,6 +100,29 @@
             <span class="risk-pill" :class="run.safety.level">{{ run.safety.level }}</span>
           </div>
 
+          <section class="summary-card">
+            <div>
+              <small>事件状态</small>
+              <strong>{{ run.summary.status_label }}</strong>
+            </div>
+            <div>
+              <small>可信度</small>
+              <strong>{{ run.summary.confidence }}</strong>
+            </div>
+            <div>
+              <small>证据数量</small>
+              <strong>{{ run.summary.evidence_count }}</strong>
+            </div>
+            <div class="summary-wide">
+              <small>结论</small>
+              <strong>{{ run.summary.conclusion }}</strong>
+            </div>
+            <div class="summary-wide">
+              <small>推荐下一步</small>
+              <strong>{{ run.summary.recommended_action }}</strong>
+            </div>
+          </section>
+
           <div class="run-columns">
             <section>
               <h3>Memory Layers</h3>
@@ -111,11 +134,16 @@
             </section>
 
             <section>
-              <h3>Tool Calls</h3>
-              <div v-for="call in run.tool_calls" :key="`${run.run_id}-${call.tool}-${call.latency_ms}`" class="mini-block">
-                <strong>{{ call.tool }}</strong>
-                <span>{{ call.summary }}</span>
-                <small>{{ call.status }} · {{ call.latency_ms }} ms</small>
+              <h3>Runbook Trace</h3>
+              <div v-for="step in run.step_results" :key="`${run.run_id}-${step.step}`" class="mini-block trace-step">
+                <strong>{{ step.step }}</strong>
+                <span>{{ step.finding }}</span>
+                <small>{{ step.description }}</small>
+                <div class="tool-chip-row">
+                  <span v-for="call in step.tool_calls" :key="`${step.step}-${call.tool}`">
+                    {{ call.tool }}
+                  </span>
+                </div>
               </div>
             </section>
 
