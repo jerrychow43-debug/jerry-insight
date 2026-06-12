@@ -101,6 +101,257 @@ h1 {
   align-items: start;
 }
 
+.mode-tabs {
+  display: inline-flex;
+  gap: 6px;
+  padding: 4px;
+  margin-bottom: 14px;
+  background: #dfe7f1;
+  border-radius: 8px;
+}
+
+.mode-tabs button {
+  min-width: 150px;
+  padding: 9px 12px;
+  background: transparent;
+  color: #526175;
+  font-weight: 800;
+}
+
+.mode-tabs button.active {
+  background: #ffffff;
+  color: #0f766e;
+  box-shadow: 0 4px 12px rgba(27, 39, 60, 0.08);
+}
+
+.lifeops-workspace {
+  display: grid;
+  gap: 16px;
+}
+
+.lifeops-hero,
+.lifeops-card,
+.lifeops-runs {
+  background: #ffffff;
+  border: 1px solid #dce4ef;
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(27, 39, 60, 0.07);
+}
+
+.lifeops-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px;
+}
+
+.lifeops-hero h2 {
+  margin-bottom: 8px;
+  font-size: 26px;
+}
+
+.lifeops-hero p:not(.eyebrow) {
+  max-width: 860px;
+  color: #5f6d80;
+  line-height: 1.7;
+}
+
+.lifeops-grid {
+  display: grid;
+  grid-template-columns: 1.05fr 1fr 1.1fr;
+  gap: 16px;
+  align-items: stretch;
+}
+
+.lifeops-card {
+  padding: 16px;
+}
+
+.event-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.event-list button {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  padding: 12px;
+  text-align: left;
+  background: #f5f8fb;
+  border: 1px solid #e1e9f3;
+}
+
+.event-list button.active {
+  background: #eaf8f5;
+  border-color: #94d7c9;
+}
+
+.event-list span,
+.runbook-list span,
+.mini-block span {
+  color: #617086;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.runbook-list {
+  display: grid;
+  gap: 10px;
+  padding-left: 20px;
+  margin: 14px 0 0;
+}
+
+.runbook-list li {
+  padding: 0 0 10px 4px;
+  border-bottom: 1px solid #edf2f7;
+}
+
+.runbook-list strong,
+.runbook-list span,
+.runbook-list code {
+  display: block;
+  margin-bottom: 5px;
+}
+
+.runbook-list code {
+  width: fit-content;
+  padding: 3px 6px;
+  border-radius: 5px;
+  background: #eef7f6;
+  color: #0f766e;
+  font-size: 12px;
+}
+
+.goal-card textarea {
+  width: 100%;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #d7e0eb;
+  border-radius: 8px;
+  resize: vertical;
+  color: #182235;
+  background: #fbfdff;
+  font: inherit;
+  line-height: 1.65;
+}
+
+.toolset-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.toolset-strip span {
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.lifeops-runs {
+  overflow: hidden;
+}
+
+.lifeops-run {
+  padding: 16px 18px;
+  border-top: 1px solid #e6edf5;
+}
+
+.run-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.run-title strong,
+.run-title span {
+  display: block;
+}
+
+.run-title span {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.risk-pill {
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #eaf8f5;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.risk-pill.medium {
+  background: #fff7ed;
+  color: #c05621;
+}
+
+.risk-pill.high {
+  background: #fff1f2;
+  color: #be123c;
+}
+
+.run-columns {
+  display: grid;
+  grid-template-columns: 0.9fr 1.2fr 0.9fr;
+  gap: 14px;
+}
+
+.run-columns h3 {
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.mini-block {
+  display: grid;
+  gap: 4px;
+  padding: 9px;
+  margin-bottom: 8px;
+  border: 1px solid #e3ebf4;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.mini-block small {
+  color: #8792a3;
+  font-size: 12px;
+}
+
+.report-box {
+  margin-top: 12px;
+  border: 1px solid #e3ebf4;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.report-box summary {
+  padding: 10px 12px;
+  background: #f4f8fb;
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.report-box pre {
+  margin: 0;
+  padding: 14px;
+  overflow: auto;
+  white-space: pre-wrap;
+  line-height: 1.65;
+  color: #253247;
+  background: #ffffff;
+  font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+}
+
 .chat-panel,
 .side-card {
   background: #ffffff;

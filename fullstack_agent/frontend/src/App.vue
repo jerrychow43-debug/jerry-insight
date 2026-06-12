@@ -11,7 +11,137 @@
       </div>
     </section>
 
-    <section class="workspace">
+    <nav class="mode-tabs">
+      <button type="button" :class="{ active: activeView === 'lifeops' }" @click="activeView = 'lifeops'">
+        LifeOps Agent
+      </button>
+      <button type="button" :class="{ active: activeView === 'legacy' }" @click="activeView = 'legacy'">
+        Legacy 省钱智探
+      </button>
+    </nav>
+
+    <section v-if="activeView === 'lifeops'" class="lifeops-workspace">
+      <section class="lifeops-hero">
+        <div>
+          <p class="eyebrow">Event-driven Agent Runtime</p>
+          <h2>Jerry LifeOps Agent</h2>
+          <p>
+            借鉴 HolmesGPT 的 runbook/toolset、Letta 的三层 memory、GPT-Researcher 的 planner/executor/report。
+            这里不是聊天入口，而是事件处置工作台。
+          </p>
+        </div>
+        <button class="primary-button" type="button" :disabled="lifeopsLoading" @click="runLifeOps">
+          {{ lifeopsLoading ? "运行中" : "运行 Runbook" }}
+        </button>
+      </section>
+
+      <section class="lifeops-grid">
+        <section class="lifeops-card event-card">
+          <header class="side-header">
+            <h2>事件类型</h2>
+            <button class="text-button" type="button" @click="loadLifeOpsSpec">刷新</button>
+          </header>
+          <div class="event-list">
+            <button
+              v-for="event in lifeopsSpec.event_types"
+              :key="event.id"
+              type="button"
+              :class="{ active: selectedLifeOpsEvent === event.id }"
+              @click="selectLifeOpsEvent(event)"
+            >
+              <strong>{{ event.name }}</strong>
+              <span>{{ event.description }}</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="lifeops-card runbook-card">
+          <header class="side-header">
+            <h2>Runbook</h2>
+            <span>{{ currentRunbook.length }} steps</span>
+          </header>
+          <ol class="runbook-list">
+            <li v-for="step in currentRunbook" :key="step.name">
+              <strong>{{ step.name }}</strong>
+              <span>{{ step.description }}</span>
+              <code>{{ step.toolset.join(" / ") }}</code>
+            </li>
+          </ol>
+        </section>
+
+        <section class="lifeops-card goal-card">
+          <header class="side-header">
+            <h2>事件目标</h2>
+          </header>
+          <textarea v-model="lifeopsGoal" rows="8" placeholder="描述一个事件，而不是问一个普通问题"></textarea>
+          <div class="toolset-strip">
+            <span v-for="toolset in lifeopsSpec.toolsets" :key="toolset.name">
+              {{ toolset.name }}
+            </span>
+          </div>
+        </section>
+      </section>
+
+      <section class="lifeops-runs">
+        <header class="panel-header">
+          <div>
+            <h2>LifeOps Runs</h2>
+            <p>每次运行都会展示 runbook、tool calls、memory layers、safety gate 和 report。</p>
+          </div>
+          <button class="icon-button" type="button" title="刷新运行记录" @click="loadLifeOpsRuns">↻</button>
+        </header>
+
+        <article v-for="run in lifeopsRuns" :key="run.run_id" class="lifeops-run">
+          <div class="run-title">
+            <div>
+              <strong>{{ run.title }}</strong>
+              <span>{{ run.run_id }} · {{ run.status }} · {{ run.created_at }}</span>
+            </div>
+            <span class="risk-pill" :class="run.safety.level">{{ run.safety.level }}</span>
+          </div>
+
+          <div class="run-columns">
+            <section>
+              <h3>Memory Layers</h3>
+              <div v-for="layer in run.memory" :key="layer.name" class="mini-block">
+                <strong>{{ layer.name }}</strong>
+                <span>{{ layer.role }}</span>
+                <small>{{ layer.items.length }} items</small>
+              </div>
+            </section>
+
+            <section>
+              <h3>Tool Calls</h3>
+              <div v-for="call in run.tool_calls" :key="`${run.run_id}-${call.tool}-${call.latency_ms}`" class="mini-block">
+                <strong>{{ call.tool }}</strong>
+                <span>{{ call.summary }}</span>
+                <small>{{ call.status }} · {{ call.latency_ms }} ms</small>
+              </div>
+            </section>
+
+            <section>
+              <h3>Safety Gate</h3>
+              <div class="mini-block">
+                <strong>{{ run.safety.requires_human ? "需要人工确认" : "无需人工确认" }}</strong>
+                <span>{{ run.safety.reason }}</span>
+                <small v-if="run.safety.blocked_actions.length">
+                  blocked: {{ run.safety.blocked_actions.join(", ") }}
+                </small>
+              </div>
+            </section>
+          </div>
+
+          <details class="report-box" open>
+            <summary>处置报告</summary>
+            <pre>{{ run.report }}</pre>
+          </details>
+        </article>
+
+        <p v-if="lifeopsRuns.length === 0" class="empty-note">暂无 LifeOps 运行记录。选择事件后点击运行 Runbook。</p>
+      </section>
+    </section>
+
+    <section v-if="activeView === 'legacy'" class="workspace">
       <section class="chat-panel">
         <header class="panel-header">
           <div>
@@ -222,6 +352,14 @@ const currentSurplus = ref("");
 const messageBox = ref(null);
 const ledgerItem = ref("");
 const ledgerAmount = ref("");
+const activeView = ref("lifeops");
+const lifeopsSpec = ref({ event_types: [], toolsets: [], runbooks: {} });
+const selectedLifeOpsEvent = ref("budget_anomaly");
+const lifeopsGoal = ref("最近我感觉外卖和饮料花太多了，帮我查一下哪里异常。");
+const lifeopsRuns = ref([]);
+const lifeopsLoading = ref(false);
+
+const currentRunbook = computed(() => lifeopsSpec.value.runbooks?.[selectedLifeOpsEvent.value] || []);
 
 const purchasedItems = computed(() =>
   ledger.value.filter((item) => item.status === "active" && item.amount > 0).slice(0, 12)
@@ -283,6 +421,46 @@ async function loadBlocked() {
     blockedItems.value = res.data.items || [];
   } catch (err) {
     blockedItems.value = [];
+  }
+}
+
+async function loadLifeOpsSpec() {
+  try {
+    const res = await axios.get(`${API_BASE}/api/lifeops/spec`);
+    lifeopsSpec.value = res.data;
+    if (!selectedLifeOpsEvent.value && res.data.event_types?.length) {
+      selectLifeOpsEvent(res.data.event_types[0]);
+    }
+  } catch (err) {
+    lifeopsSpec.value = { event_types: [], toolsets: [], runbooks: {} };
+  }
+}
+
+async function loadLifeOpsRuns() {
+  try {
+    const res = await axios.get(`${API_BASE}/api/lifeops/runs`);
+    lifeopsRuns.value = res.data.items || [];
+  } catch (err) {
+    lifeopsRuns.value = [];
+  }
+}
+
+function selectLifeOpsEvent(event) {
+  selectedLifeOpsEvent.value = event.id;
+  lifeopsGoal.value = event.example || lifeopsGoal.value;
+}
+
+async function runLifeOps() {
+  if (!lifeopsGoal.value.trim() || lifeopsLoading.value) return;
+  lifeopsLoading.value = true;
+  try {
+    await axios.post(`${API_BASE}/api/lifeops/run`, {
+      event_type: selectedLifeOpsEvent.value,
+      goal: lifeopsGoal.value,
+    });
+    await loadLifeOpsRuns();
+  } finally {
+    lifeopsLoading.value = false;
   }
 }
 
@@ -411,5 +589,9 @@ async function undoLedger() {
   await sendMessage();
 }
 
-onMounted(refreshAll);
+onMounted(async () => {
+  await refreshAll();
+  await loadLifeOpsSpec();
+  await loadLifeOpsRuns();
+});
 </script>

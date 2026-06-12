@@ -16,6 +16,9 @@ from db import (
     list_ledger,
 )
 from notifier import notify_async
+from lifeops_service import list_runs as list_lifeops_runs
+from lifeops_service import list_specs as list_lifeops_specs
+from lifeops_service import run_lifeops
 
 
 app = FastAPI(
@@ -49,6 +52,11 @@ class SkipPurchaseRequest(BaseModel):
     raw_query: str = ""
 
 
+class LifeOpsRunRequest(BaseModel):
+    event_type: str = Field(..., min_length=1, max_length=80)
+    goal: str = Field(..., min_length=1, max_length=1200)
+
+
 @app.on_event("startup")
 def startup():
     init_db()
@@ -61,6 +69,21 @@ def health():
         "service": "jerry-insight-agent-api",
         "current_surplus": get_current_surplus(),
     }
+
+
+@app.get("/api/lifeops/spec")
+def lifeops_spec():
+    return list_lifeops_specs()
+
+
+@app.get("/api/lifeops/runs")
+def lifeops_runs():
+    return {"items": list_lifeops_runs()}
+
+
+@app.post("/api/lifeops/run")
+def lifeops_run(req: LifeOpsRunRequest):
+    return run_lifeops(req.event_type, req.goal)
 
 
 @app.post("/api/chat")
