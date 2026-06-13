@@ -102,7 +102,7 @@ h1 {
 }
 
 .mode-tabs {
-  display: inline-flex;
+  display: flex;
   gap: 6px;
   padding: 4px;
   margin-bottom: 14px;
@@ -111,11 +111,19 @@ h1 {
 }
 
 .mode-tabs button {
-  min-width: 150px;
+  min-width: 180px;
   padding: 9px 12px;
   background: transparent;
   color: #526175;
   font-weight: 800;
+}
+
+.top-mode-tabs {
+  width: 100%;
+}
+
+.top-mode-tabs button {
+  flex: 1;
 }
 
 .mode-tabs button.active {
@@ -164,6 +172,24 @@ h1 {
   align-items: stretch;
 }
 
+.lifeops-main-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.78fr) minmax(0, 1.22fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.lifeops-left,
+.lifeops-right {
+  display: grid;
+  gap: 16px;
+}
+
+.lifeops-right {
+  position: sticky;
+  top: 12px;
+}
+
 .lifeops-card {
   padding: 16px;
 }
@@ -172,6 +198,10 @@ h1 {
   display: grid;
   gap: 10px;
   margin-top: 14px;
+}
+
+.compact-events {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .event-list button {
@@ -202,6 +232,13 @@ h1 {
   gap: 10px;
   padding-left: 20px;
   margin: 14px 0 0;
+}
+
+.compact-runbook {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: grid;
+  padding-left: 0;
+  list-style: none;
 }
 
 .runbook-list li {
@@ -256,6 +293,33 @@ h1 {
 
 .lifeops-runs {
   overflow: hidden;
+}
+
+.latest-result {
+  padding: 16px;
+}
+
+.latest-result .side-header {
+  margin-bottom: 12px;
+}
+
+.latest-result .side-header span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.empty-latest {
+  min-height: 280px;
+  align-content: center;
+  text-align: center;
+}
+
+.empty-latest p {
+  max-width: 480px;
+  margin: 10px auto 0;
+  color: #64748b;
+  line-height: 1.7;
 }
 
 .lifeops-run {
@@ -316,6 +380,25 @@ h1 {
   border: 1px solid #cfe8e2;
   border-radius: 8px;
   background: #f0fbf8;
+}
+
+.latest-summary {
+  grid-template-columns: repeat(3, minmax(0, 0.7fr)) repeat(2, minmax(0, 1.45fr));
+}
+
+.latest-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(260px, 0.9fr);
+  gap: 14px;
+}
+
+.latest-columns h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.latest-report {
+  margin-top: 6px;
 }
 
 .summary-card div {

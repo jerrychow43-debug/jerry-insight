@@ -11,7 +11,7 @@
       </div>
     </section>
 
-    <nav class="mode-tabs">
+    <nav class="mode-tabs top-mode-tabs">
       <button type="button" :class="{ active: activeView === 'lifeops' }" @click="activeView = 'lifeops'">
         LifeOps Agent
       </button>
@@ -35,50 +35,118 @@
         </button>
       </section>
 
-      <section class="lifeops-grid">
-        <section class="lifeops-card event-card">
-          <header class="side-header">
-            <h2>事件类型</h2>
-            <button class="text-button" type="button" @click="loadLifeOpsSpec">刷新</button>
-          </header>
-          <div class="event-list">
-            <button
-              v-for="event in lifeopsSpec.event_types"
-              :key="event.id"
-              type="button"
-              :class="{ active: selectedLifeOpsEvent === event.id }"
-              @click="selectLifeOpsEvent(event)"
-            >
-              <strong>{{ event.name }}</strong>
-              <span>{{ event.description }}</span>
-            </button>
-          </div>
+      <section class="lifeops-main-grid">
+        <section class="lifeops-left">
+          <section class="lifeops-card event-card">
+            <header class="side-header">
+              <h2>事件类型</h2>
+              <button class="text-button" type="button" @click="loadLifeOpsSpec">刷新</button>
+            </header>
+            <div class="event-list compact-events">
+              <button
+                v-for="event in lifeopsSpec.event_types"
+                :key="event.id"
+                type="button"
+                :class="{ active: selectedLifeOpsEvent === event.id }"
+                @click="selectLifeOpsEvent(event)"
+              >
+                <strong>{{ event.name }}</strong>
+                <span>{{ event.description }}</span>
+              </button>
+            </div>
+          </section>
+
+          <section class="lifeops-card goal-card">
+            <header class="side-header">
+              <h2>事件目标</h2>
+            </header>
+            <textarea v-model="lifeopsGoal" rows="6" placeholder="描述一个事件，而不是问一个普通问题"></textarea>
+            <div class="toolset-strip">
+              <span v-for="toolset in lifeopsSpec.toolsets" :key="toolset.name">
+                {{ toolset.name }}
+              </span>
+            </div>
+          </section>
+
+          <section class="lifeops-card runbook-card">
+            <header class="side-header">
+              <h2>Runbook</h2>
+              <span>{{ currentRunbook.length }} steps</span>
+            </header>
+            <ol class="runbook-list compact-runbook">
+              <li v-for="step in currentRunbook" :key="step.name">
+                <strong>{{ step.name }}</strong>
+                <span>{{ step.description }}</span>
+                <code>{{ step.toolset.join(" / ") }}</code>
+              </li>
+            </ol>
+          </section>
         </section>
 
-        <section class="lifeops-card runbook-card">
-          <header class="side-header">
-            <h2>Runbook</h2>
-            <span>{{ currentRunbook.length }} steps</span>
-          </header>
-          <ol class="runbook-list">
-            <li v-for="step in currentRunbook" :key="step.name">
-              <strong>{{ step.name }}</strong>
-              <span>{{ step.description }}</span>
-              <code>{{ step.toolset.join(" / ") }}</code>
-            </li>
-          </ol>
-        </section>
+        <section class="lifeops-right">
+          <section v-if="latestLifeOpsRun" class="lifeops-card latest-result">
+            <header class="side-header">
+              <h2>最新处置结果</h2>
+              <span>{{ latestLifeOpsRun.run_id }}</span>
+            </header>
+            <section class="summary-card latest-summary">
+              <div>
+                <small>事件状态</small>
+                <strong>{{ latestLifeOpsRun.summary.status_label }}</strong>
+              </div>
+              <div>
+                <small>可信度</small>
+                <strong>{{ latestLifeOpsRun.summary.confidence }}</strong>
+              </div>
+              <div>
+                <small>证据数量</small>
+                <strong>{{ latestLifeOpsRun.summary.evidence_count }}</strong>
+              </div>
+              <div class="summary-wide">
+                <small>结论</small>
+                <strong>{{ latestLifeOpsRun.summary.conclusion }}</strong>
+              </div>
+              <div class="summary-wide">
+                <small>推荐下一步</small>
+                <strong>{{ latestLifeOpsRun.summary.recommended_action }}</strong>
+              </div>
+            </section>
 
-        <section class="lifeops-card goal-card">
-          <header class="side-header">
-            <h2>事件目标</h2>
-          </header>
-          <textarea v-model="lifeopsGoal" rows="8" placeholder="描述一个事件，而不是问一个普通问题"></textarea>
-          <div class="toolset-strip">
-            <span v-for="toolset in lifeopsSpec.toolsets" :key="toolset.name">
-              {{ toolset.name }}
-            </span>
-          </div>
+            <div class="latest-columns">
+              <section>
+                <h3>Runbook Trace</h3>
+                <div v-for="step in latestLifeOpsRun.step_results" :key="`latest-${step.step}`" class="mini-block trace-step">
+                  <strong>{{ step.step }}</strong>
+                  <span>{{ step.finding }}</span>
+                  <div class="tool-chip-row">
+                    <span v-for="call in step.tool_calls" :key="`latest-${step.step}-${call.tool}`">{{ call.tool }}</span>
+                  </div>
+                </div>
+              </section>
+              <section>
+                <h3>Safety Gate</h3>
+                <div class="mini-block">
+                  <strong>{{ latestLifeOpsRun.safety.requires_human ? "需要人工确认" : "无需人工确认" }}</strong>
+                  <span>{{ latestLifeOpsRun.safety.reason }}</span>
+                </div>
+                <h3>Memory</h3>
+                <div v-for="layer in latestLifeOpsRun.memory" :key="`latest-${layer.name}`" class="mini-block">
+                  <strong>{{ layer.name }}</strong>
+                  <span>{{ layer.items.length }} items</span>
+                </div>
+              </section>
+            </div>
+
+            <details class="report-box latest-report" open>
+              <summary>处置报告</summary>
+              <pre>{{ latestLifeOpsRun.report }}</pre>
+            </details>
+          </section>
+
+          <section v-else class="lifeops-card latest-result empty-latest">
+            <h2>等待运行</h2>
+            <p>选择一个事件类型，填写事件目标，点击右上角“运行 Runbook”。结果会直接显示在这里，不用向下翻。</p>
+          </section>
         </section>
       </section>
 
@@ -91,7 +159,7 @@
           <button class="icon-button" type="button" title="刷新运行记录" @click="loadLifeOpsRuns">↻</button>
         </header>
 
-        <article v-for="run in lifeopsRuns" :key="run.run_id" class="lifeops-run">
+        <article v-for="run in lifeopsRuns.slice(1)" :key="run.run_id" class="lifeops-run">
           <div class="run-title">
             <div>
               <strong>{{ run.title }}</strong>
@@ -165,7 +233,7 @@
           </details>
         </article>
 
-        <p v-if="lifeopsRuns.length === 0" class="empty-note">暂无 LifeOps 运行记录。选择事件后点击运行 Runbook。</p>
+        <p v-if="lifeopsRuns.length <= 1" class="empty-note">暂无更多历史运行记录。</p>
       </section>
     </section>
 
@@ -388,6 +456,7 @@ const lifeopsRuns = ref([]);
 const lifeopsLoading = ref(false);
 
 const currentRunbook = computed(() => lifeopsSpec.value.runbooks?.[selectedLifeOpsEvent.value] || []);
+const latestLifeOpsRun = computed(() => lifeopsRuns.value[0] || null);
 
 const purchasedItems = computed(() =>
   ledger.value.filter((item) => item.status === "active" && item.amount > 0).slice(0, 12)
