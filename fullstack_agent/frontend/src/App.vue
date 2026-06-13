@@ -2,8 +2,8 @@
   <main class="app-shell">
     <section class="top-bar">
       <div>
-        <p class="eyebrow">Jerry-Insight Agent Pro</p>
-        <h1>省钱智探工作台</h1>
+        <p class="eyebrow">AgentForge Lab</p>
+        <h1>开源 Agent 项目研究工作台</h1>
       </div>
       <div class="backend-pill" :class="{ online: backendOk }">
         <span></span>
@@ -11,16 +11,7 @@
       </div>
     </section>
 
-    <nav class="mode-tabs top-mode-tabs">
-      <button type="button" :class="{ active: activeView === 'lifeops' }" @click="activeView = 'lifeops'">
-        AgentForge Lab
-      </button>
-      <button type="button" :class="{ active: activeView === 'legacy' }" @click="activeView = 'legacy'">
-        Legacy 省钱智探
-      </button>
-    </nav>
-
-    <section v-if="activeView === 'lifeops'" class="lifeops-workspace">
+    <section class="lifeops-workspace">
       <section class="lifeops-hero">
         <div>
           <p class="eyebrow">Event-driven Agent Runtime</p>
@@ -237,7 +228,7 @@
       </section>
     </section>
 
-    <section v-if="activeView === 'legacy'" class="workspace">
+    <section v-if="false" class="workspace">
       <section class="chat-panel">
         <header class="panel-header">
           <div>
@@ -448,9 +439,69 @@ const currentSurplus = ref("");
 const messageBox = ref(null);
 const ledgerItem = ref("");
 const ledgerAmount = ref("");
-const activeView = ref("lifeops");
-const lifeopsSpec = ref({ event_types: [], toolsets: [], runbooks: {} });
-const selectedLifeOpsEvent = ref("budget_anomaly");
+const AGENTFORGE_FALLBACK_SPEC = {
+  event_types: [
+    {
+      id: "gpt_researcher",
+      name: "GPT-Researcher",
+      description: "研究 planner / executor / publisher，以及 citation 和报告质量。",
+      example: "研究 GPT-Researcher 的核心机制，看看哪些点能借鉴到我的项目里。",
+    },
+    {
+      id: "letta",
+      name: "Letta / MemGPT",
+      description: "研究三层 memory architecture：core、recall、archival。",
+      example: "研究 Letta 的记忆系统，看看怎么用于我的面试准备和项目复盘。",
+    },
+    {
+      id: "holmesgpt",
+      name: "HolmesGPT",
+      description: "研究 AIOps agent 的 runbook、toolset、权限安全和 fallback。",
+      example: "研究 HolmesGPT 的 runbook 和 toolset 设计，看看我的项目能怎么借鉴。",
+    },
+    {
+      id: "aider",
+      name: "Aider",
+      description: "研究 repo map、代码上下文筛选和 Git undo 机制。",
+      example: "研究 Aider 的 repo map，看看能不能做我的项目资料 map。",
+    },
+  ],
+  toolsets: [
+    { name: "project_profile_toolset" },
+    { name: "local_context_toolset" },
+    { name: "adaptation_toolset" },
+    { name: "report_toolset" },
+  ],
+  runbooks: {
+    gpt_researcher: [
+      { name: "load_profile", description: "读取开源项目的定位、核心机制和典型追问。", toolset: ["project_profile_toolset"] },
+      { name: "read_my_context", description: "读取我的项目/笔记上下文，找到可以映射的地方。", toolset: ["local_context_toolset"] },
+      { name: "extract_borrowable_points", description: "提取可借鉴点，避免写成生硬二改方案。", toolset: ["adaptation_toolset"] },
+      { name: "publish_report", description: "生成研究报告、面试追问和结合建议。", toolset: ["report_toolset"] },
+    ],
+    letta: [
+      { name: "load_profile", description: "读取开源项目的定位、核心机制和典型追问。", toolset: ["project_profile_toolset"] },
+      { name: "read_my_context", description: "读取我的项目/笔记上下文，找到可以映射的地方。", toolset: ["local_context_toolset"] },
+      { name: "extract_borrowable_points", description: "提取可借鉴点，避免写成生硬二改方案。", toolset: ["adaptation_toolset"] },
+      { name: "publish_report", description: "生成研究报告、面试追问和结合建议。", toolset: ["report_toolset"] },
+    ],
+    holmesgpt: [
+      { name: "load_profile", description: "读取开源项目的定位、核心机制和典型追问。", toolset: ["project_profile_toolset"] },
+      { name: "read_my_context", description: "读取我的项目/笔记上下文，找到可以映射的地方。", toolset: ["local_context_toolset"] },
+      { name: "extract_borrowable_points", description: "提取可借鉴点，避免写成生硬二改方案。", toolset: ["adaptation_toolset"] },
+      { name: "publish_report", description: "生成研究报告、面试追问和结合建议。", toolset: ["report_toolset"] },
+    ],
+    aider: [
+      { name: "load_profile", description: "读取开源项目的定位、核心机制和典型追问。", toolset: ["project_profile_toolset"] },
+      { name: "read_my_context", description: "读取我的项目/笔记上下文，找到可以映射的地方。", toolset: ["local_context_toolset"] },
+      { name: "extract_borrowable_points", description: "提取可借鉴点，避免写成生硬二改方案。", toolset: ["adaptation_toolset"] },
+      { name: "publish_report", description: "生成研究报告、面试追问和结合建议。", toolset: ["report_toolset"] },
+    ],
+  },
+};
+
+const lifeopsSpec = ref(AGENTFORGE_FALLBACK_SPEC);
+const selectedLifeOpsEvent = ref("gpt_researcher");
 const lifeopsGoal = ref("研究 GPT-Researcher 的核心机制，看看哪些点能借鉴到我的项目里。");
 const lifeopsRuns = ref([]);
 const lifeopsLoading = ref(false);
@@ -524,12 +575,14 @@ async function loadBlocked() {
 async function loadLifeOpsSpec() {
   try {
     const res = await axios.get(`${API_BASE}/api/lifeops/spec`);
-    lifeopsSpec.value = res.data;
-    if (!selectedLifeOpsEvent.value && res.data.event_types?.length) {
-      selectLifeOpsEvent(res.data.event_types[0]);
+    const incoming = res.data || {};
+    const ids = (incoming.event_types || []).map((item) => item.id);
+    lifeopsSpec.value = ids.includes("gpt_researcher") ? incoming : AGENTFORGE_FALLBACK_SPEC;
+    if (!selectedLifeOpsEvent.value && lifeopsSpec.value.event_types?.length) {
+      selectLifeOpsEvent(lifeopsSpec.value.event_types[0]);
     }
   } catch (err) {
-    lifeopsSpec.value = { event_types: [], toolsets: [], runbooks: {} };
+    lifeopsSpec.value = AGENTFORGE_FALLBACK_SPEC;
   }
 }
 
