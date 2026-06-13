@@ -2,12 +2,12 @@
 
 这是省钱智探 Agent 的轻量 FastAPI 后端版本，用来练习和展示“前后端分离 + Agent API + SQLite 持久化”的全栈结构。
 
-## LifeOps Agent
+## AgentForge Lab
 
-当前后端新增了 `Jerry LifeOps Agent` API。它不是普通聊天接口，而是事件驱动的 Agent Runtime：
+当前后端新增了 `AgentForge Lab` API。它不是普通聊天接口，而是开源 Agent 项目研究工作台：
 
 ```text
-事件 -> Runbook -> Toolset -> Memory Layers -> Safety Gate -> Report
+研究对象 -> Runbook -> Toolset -> Memory Layers -> Safety Gate -> Research Report
 ```
 
 借鉴点：
@@ -23,17 +23,17 @@
 - `POST /api/chat`：提交用户问题，返回 Agent 回复和耗时
 - `GET /api/history`：查看历史问答记录
 - `DELETE /api/history`：清空历史记录
-- `GET /api/lifeops/spec`：查看 LifeOps 事件类型、toolset 和 runbook
-- `POST /api/lifeops/run`：运行一个 LifeOps 事件
-- `GET /api/lifeops/runs`：查看最近 LifeOps 运行记录
+- `GET /api/lifeops/spec`：查看 AgentForge 研究对象、toolset 和 runbook
+- `POST /api/lifeops/run`：运行一次开源 Agent 项目研究
+- `GET /api/lifeops/runs`：查看最近研究记录
 
-LifeOps 当前支持四类事件：
+AgentForge 当前支持四个研究对象：
 
 ```text
-budget_anomaly        消费异常事件
-procurement_decision  采购决策事件
-interview_countdown   面试冲刺事件
-learning_delay        学习延期事件
+gpt_researcher  GPT-Researcher planner/executor/publisher
+letta           Letta / MemGPT 三层 memory
+holmesgpt       HolmesGPT runbook/toolset/safety
+aider           Aider repo map / context selection
 ```
 
 ## 启动

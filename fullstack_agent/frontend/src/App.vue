@@ -13,7 +13,7 @@
 
     <nav class="mode-tabs top-mode-tabs">
       <button type="button" :class="{ active: activeView === 'lifeops' }" @click="activeView = 'lifeops'">
-        LifeOps Agent
+        AgentForge Lab
       </button>
       <button type="button" :class="{ active: activeView === 'legacy' }" @click="activeView = 'legacy'">
         Legacy 省钱智探
@@ -24,14 +24,14 @@
       <section class="lifeops-hero">
         <div>
           <p class="eyebrow">Event-driven Agent Runtime</p>
-          <h2>Jerry LifeOps Agent</h2>
+          <h2>AgentForge Lab</h2>
           <p>
-            借鉴 HolmesGPT 的 runbook/toolset、Letta 的三层 memory、GPT-Researcher 的 planner/executor/report。
-            这里不是聊天入口，而是事件处置工作台。
+            研究优质开源 Agent 项目，提取它们真正值得学的机制，再映射到 Jerry 自己的项目里。
+            这里不是聊天入口，而是 Agent 项目研究工作台。
           </p>
         </div>
         <button class="primary-button" type="button" :disabled="lifeopsLoading" @click="runLifeOps">
-          {{ lifeopsLoading ? "运行中" : "运行 Runbook" }}
+          {{ lifeopsLoading ? "研究中" : "开始研究" }}
         </button>
       </section>
 
@@ -39,7 +39,7 @@
         <section class="lifeops-left">
           <section class="lifeops-card event-card">
             <header class="side-header">
-              <h2>事件类型</h2>
+              <h2>研究对象</h2>
               <button class="text-button" type="button" @click="loadLifeOpsSpec">刷新</button>
             </header>
             <div class="event-list compact-events">
@@ -58,9 +58,9 @@
 
           <section class="lifeops-card goal-card">
             <header class="side-header">
-              <h2>事件目标</h2>
+              <h2>研究目标</h2>
             </header>
-            <textarea v-model="lifeopsGoal" rows="6" placeholder="描述一个事件，而不是问一个普通问题"></textarea>
+            <textarea v-model="lifeopsGoal" rows="6" placeholder="描述你想研究的 Agent 项目机制，以及希望怎么结合到自己的项目"></textarea>
             <div class="toolset-strip">
               <span v-for="toolset in lifeopsSpec.toolsets" :key="toolset.name">
                 {{ toolset.name }}
@@ -144,8 +144,8 @@
           </section>
 
           <section v-else class="lifeops-card latest-result empty-latest">
-            <h2>等待运行</h2>
-            <p>选择一个事件类型，填写事件目标，点击右上角“运行 Runbook”。结果会直接显示在这里，不用向下翻。</p>
+            <h2>等待研究</h2>
+            <p>选择一个开源 Agent 项目，填写研究目标，点击右上角“开始研究”。结果会直接显示在这里。</p>
           </section>
         </section>
       </section>
@@ -153,8 +153,8 @@
       <section class="lifeops-runs">
         <header class="panel-header">
           <div>
-            <h2>LifeOps Runs</h2>
-            <p>每次运行都会展示 runbook、tool calls、memory layers、safety gate 和 report。</p>
+            <h2>Research Runs</h2>
+            <p>每次研究都会展示核心机制、可借鉴点、memory evidence、runbook trace 和面试追问。</p>
           </div>
           <button class="icon-button" type="button" title="刷新运行记录" @click="loadLifeOpsRuns">↻</button>
         </header>
@@ -233,7 +233,7 @@
           </details>
         </article>
 
-        <p v-if="lifeopsRuns.length <= 1" class="empty-note">暂无更多历史运行记录。</p>
+        <p v-if="lifeopsRuns.length <= 1" class="empty-note">暂无更多历史研究记录。</p>
       </section>
     </section>
 
@@ -451,7 +451,7 @@ const ledgerAmount = ref("");
 const activeView = ref("lifeops");
 const lifeopsSpec = ref({ event_types: [], toolsets: [], runbooks: {} });
 const selectedLifeOpsEvent = ref("budget_anomaly");
-const lifeopsGoal = ref("最近我感觉外卖和饮料花太多了，帮我查一下哪里异常。");
+const lifeopsGoal = ref("研究 GPT-Researcher 的核心机制，看看哪些点能借鉴到我的项目里。");
 const lifeopsRuns = ref([]);
 const lifeopsLoading = ref(false);
 
