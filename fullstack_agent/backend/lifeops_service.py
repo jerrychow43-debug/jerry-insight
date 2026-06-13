@@ -91,6 +91,11 @@ PROJECT_PROFILES: Dict[str, Dict[str, Any]] = {
             "Git 自动提交/回滚可以作为 agent undo 机制。",
         ],
         "fit_for_jerry": "可以借鉴为“项目资料 map”：自动扫描 README、后端、前端、笔记，选出面试回答最相关的材料。",
+        "implementation_targets": [
+            "新增 ProjectMap 页面：展示 README、backend、frontend、notes 的关系图。",
+            "新增 context_selector 工具：根据研究目标只选相关文件片段。",
+            "在面试材料生成前，先输出“本次引用了哪些项目文件”。",
+        ],
         "questions": [
             "repo map 为什么比直接全文塞给模型好？",
             "如何判断哪些文件和当前任务相关？",
@@ -107,6 +112,11 @@ PROJECT_PROFILES: Dict[str, Dict[str, Any]] = {
             "报告质量要看 citation、覆盖面、冲突信息处理和失败 fallback。",
         ],
         "fit_for_jerry": "可以借鉴为“Agent 项目研究 runbook”：先拆解开源项目，再提炼可借鉴机制，最后生成面试材料。",
+        "implementation_targets": [
+            "把研究流程拆成 Planner、Collector、Publisher 三段。",
+            "报告里增加 evidence/source 区域，说明每个结论来自哪里。",
+            "增加“研究问题清单”，先拆问题再生成最终材料。",
+        ],
         "questions": [
             "planner 和 executor 为什么要分开？",
             "如何避免搜索结果堆砌成低质量报告？",
@@ -123,6 +133,11 @@ PROJECT_PROFILES: Dict[str, Dict[str, Any]] = {
             "安全不是靠 prompt，而是在权限层不给危险能力。",
         ],
         "fit_for_jerry": "可以借鉴为“面试/项目复盘 runbook”：不同研究对象走不同 SOP，危险动作只生成草稿。",
+        "implementation_targets": [
+            "把不同研究对象做成 runbook，而不是一段 prompt。",
+            "把工具分成 project_profile、local_context、report 三组 toolset。",
+            "所有会改代码/提交/部署的动作只进入 approval，不自动执行。",
+        ],
         "questions": [
             "runbook 和普通 prompt 有什么区别？",
             "为什么安全边界要放在权限层？",
@@ -139,6 +154,11 @@ PROJECT_PROFILES: Dict[str, Dict[str, Any]] = {
             "长期资料应该通过工具访问，而不是常驻上下文。",
         ],
         "fit_for_jerry": "可以借鉴为“面试准备记忆”：常驻目标岗位和项目定位，召回答不顺的问题，归档开源项目资料。",
+        "implementation_targets": [
+            "新增 Memory 面板：core memory 放目标岗位和项目定位。",
+            "recall memory 记录面试追问和答不顺的问题。",
+            "archival memory 归档开源项目资料和 README 片段。",
+        ],
         "questions": [
             "core / recall / archival memory 分别放什么？",
             "如何避免旧记忆污染当前回答？",
@@ -404,6 +424,7 @@ def _sections(event_type: str) -> Dict[str, Any]:
         "core_mechanism": profile["core_mechanism"],
         "borrowable_points": profile["what_to_learn"],
         "fit_for_jerry": profile["fit_for_jerry"],
+        "implementation_targets": profile["implementation_targets"],
         "interview_questions": profile["questions"],
         "plain_summary": (
             f"{profile['name']} 值得看的不是表面功能，而是它背后的机制："

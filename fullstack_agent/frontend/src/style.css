@@ -397,6 +397,10 @@ h1 {
   gap: 12px;
 }
 
+.focus-report {
+  gap: 14px;
+}
+
 .plain-head {
   padding: 14px;
   border-radius: 8px;
@@ -421,6 +425,37 @@ h1 {
 .plain-head p {
   color: rgba(255, 255, 255, 0.88);
   line-height: 1.55;
+}
+
+.focus-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr 0.9fr;
+  gap: 10px;
+}
+
+.focus-card {
+  display: grid;
+  gap: 8px;
+  padding: 13px;
+  border: 1px solid #e3ebf4;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.focus-card.primary {
+  border-color: #cfe8e2;
+  background: #f0fbf8;
+}
+
+.focus-card small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.focus-card strong {
+  color: #172033;
+  line-height: 1.5;
 }
 
 .plain-block {

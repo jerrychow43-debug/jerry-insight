@@ -81,22 +81,30 @@
               <span>{{ latestLifeOpsRun.run_id }}</span>
             </header>
 
-            <section class="plain-report">
+            <section class="plain-report focus-report">
               <div class="plain-head">
-                <span>研究对象</span>
+                <span>这次研究的是</span>
                 <strong>{{ latestLifeOpsRun.sections.project_name }}</strong>
                 <p>{{ latestLifeOpsRun.sections.one_liner }}</p>
               </div>
+
+              <div class="focus-grid">
+                <div class="focus-card primary">
+                  <small>它到底强在哪</small>
+                  <strong>{{ latestLifeOpsRun.sections.core_mechanism }}</strong>
+                </div>
+                <div class="focus-card">
+                  <small>我项目可以怎么用</small>
+                  <strong>{{ latestLifeOpsRun.sections.fit_for_jerry }}</strong>
+                </div>
+                <div class="focus-card">
+                  <small>当前产物是什么</small>
+                  <strong>一份面向 Jerry-Insight 的开源 Agent 机制研究卡片。</strong>
+                </div>
+              </div>
+
               <div class="plain-block highlight">
-                <h3>一句话看懂</h3>
-                <p>{{ latestLifeOpsRun.sections.plain_summary }}</p>
-              </div>
-              <div class="plain-block">
-                <h3>它最核心的机制</h3>
-                <p>{{ latestLifeOpsRun.sections.core_mechanism }}</p>
-              </div>
-              <div class="plain-block">
-                <h3>我可以学什么</h3>
+                <h3>先看这里：可借鉴点</h3>
                 <ul>
                   <li v-for="point in latestLifeOpsRun.sections.borrowable_points" :key="point">
                     {{ point }}
@@ -104,8 +112,12 @@
                 </ul>
               </div>
               <div class="plain-block">
-                <h3>怎么结合到我的项目</h3>
-                <p>{{ latestLifeOpsRun.sections.fit_for_jerry }}</p>
+                <h3>可以落到我项目里的改动</h3>
+                <ul>
+                  <li v-for="target in latestLifeOpsRun.sections.implementation_targets" :key="target">
+                    {{ target }}
+                  </li>
+                </ul>
               </div>
               <div class="plain-block">
                 <h3>面试官可能追问</h3>
@@ -118,7 +130,7 @@
             </section>
 
             <details class="technical-details">
-              <summary>查看技术执行细节：Runbook / Memory / Safety</summary>
+              <summary>技术细节：Runbook / Memory / Safety（面试展开讲，不是主内容）</summary>
               <div class="latest-columns">
                 <section>
                   <h3>Runbook Trace</h3>
