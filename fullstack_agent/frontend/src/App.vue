@@ -77,59 +77,76 @@
         <section class="lifeops-right">
           <section v-if="latestLifeOpsRun" class="lifeops-card latest-result">
             <header class="side-header">
-              <h2>最新处置结果</h2>
+              <h2>研究结果</h2>
               <span>{{ latestLifeOpsRun.run_id }}</span>
             </header>
-            <section class="summary-card latest-summary">
-              <div>
-                <small>事件状态</small>
-                <strong>{{ latestLifeOpsRun.summary.status_label }}</strong>
+
+            <section class="plain-report">
+              <div class="plain-head">
+                <span>研究对象</span>
+                <strong>{{ latestLifeOpsRun.sections.project_name }}</strong>
+                <p>{{ latestLifeOpsRun.sections.one_liner }}</p>
               </div>
-              <div>
-                <small>可信度</small>
-                <strong>{{ latestLifeOpsRun.summary.confidence }}</strong>
+              <div class="plain-block highlight">
+                <h3>一句话看懂</h3>
+                <p>{{ latestLifeOpsRun.sections.plain_summary }}</p>
               </div>
-              <div>
-                <small>证据数量</small>
-                <strong>{{ latestLifeOpsRun.summary.evidence_count }}</strong>
+              <div class="plain-block">
+                <h3>它最核心的机制</h3>
+                <p>{{ latestLifeOpsRun.sections.core_mechanism }}</p>
               </div>
-              <div class="summary-wide">
-                <small>结论</small>
-                <strong>{{ latestLifeOpsRun.summary.conclusion }}</strong>
+              <div class="plain-block">
+                <h3>我可以学什么</h3>
+                <ul>
+                  <li v-for="point in latestLifeOpsRun.sections.borrowable_points" :key="point">
+                    {{ point }}
+                  </li>
+                </ul>
               </div>
-              <div class="summary-wide">
-                <small>推荐下一步</small>
-                <strong>{{ latestLifeOpsRun.summary.recommended_action }}</strong>
+              <div class="plain-block">
+                <h3>怎么结合到我的项目</h3>
+                <p>{{ latestLifeOpsRun.sections.fit_for_jerry }}</p>
+              </div>
+              <div class="plain-block">
+                <h3>面试官可能追问</h3>
+                <ul>
+                  <li v-for="question in latestLifeOpsRun.sections.interview_questions" :key="question">
+                    {{ question }}
+                  </li>
+                </ul>
               </div>
             </section>
 
-            <div class="latest-columns">
-              <section>
-                <h3>Runbook Trace</h3>
-                <div v-for="step in latestLifeOpsRun.step_results" :key="`latest-${step.step}`" class="mini-block trace-step">
-                  <strong>{{ step.step }}</strong>
-                  <span>{{ step.finding }}</span>
-                  <div class="tool-chip-row">
-                    <span v-for="call in step.tool_calls" :key="`latest-${step.step}-${call.tool}`">{{ call.tool }}</span>
+            <details class="technical-details">
+              <summary>查看技术执行细节：Runbook / Memory / Safety</summary>
+              <div class="latest-columns">
+                <section>
+                  <h3>Runbook Trace</h3>
+                  <div v-for="step in latestLifeOpsRun.step_results" :key="`latest-${step.step}`" class="mini-block trace-step">
+                    <strong>{{ step.step }}</strong>
+                    <span>{{ step.finding }}</span>
+                    <div class="tool-chip-row">
+                      <span v-for="call in step.tool_calls" :key="`latest-${step.step}-${call.tool}`">{{ call.tool }}</span>
+                    </div>
                   </div>
-                </div>
-              </section>
-              <section>
-                <h3>Safety Gate</h3>
-                <div class="mini-block">
-                  <strong>{{ latestLifeOpsRun.safety.requires_human ? "需要人工确认" : "无需人工确认" }}</strong>
-                  <span>{{ latestLifeOpsRun.safety.reason }}</span>
-                </div>
-                <h3>Memory</h3>
-                <div v-for="layer in latestLifeOpsRun.memory" :key="`latest-${layer.name}`" class="mini-block">
-                  <strong>{{ layer.name }}</strong>
-                  <span>{{ layer.items.length }} items</span>
-                </div>
-              </section>
-            </div>
+                </section>
+                <section>
+                  <h3>Safety Gate</h3>
+                  <div class="mini-block">
+                    <strong>{{ latestLifeOpsRun.safety.requires_human ? "需要人工确认" : "无需人工确认" }}</strong>
+                    <span>{{ latestLifeOpsRun.safety.reason }}</span>
+                  </div>
+                  <h3>Memory</h3>
+                  <div v-for="layer in latestLifeOpsRun.memory" :key="`latest-${layer.name}`" class="mini-block">
+                    <strong>{{ layer.name }}</strong>
+                    <span>{{ layer.items.length }} items</span>
+                  </div>
+                </section>
+              </div>
+            </details>
 
-            <details class="report-box latest-report" open>
-              <summary>处置报告</summary>
+            <details class="report-box latest-report">
+              <summary>查看 Markdown 原文</summary>
               <pre>{{ latestLifeOpsRun.report }}</pre>
             </details>
           </section>

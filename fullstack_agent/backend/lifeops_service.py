@@ -73,6 +73,7 @@ class LifeOpsRun:
     tool_calls: List[ToolCall]
     safety: SafetyDecision
     report: str
+    sections: Dict[str, Any]
     artifacts: List[Dict[str, Any]]
 
 
@@ -394,6 +395,23 @@ def _report(event_type: str, goal: str, memory: List[MemoryLayer], step_results:
 """
 
 
+def _sections(event_type: str) -> Dict[str, Any]:
+    profile = _profile(event_type)
+    mechanism = profile["core_mechanism"].rstrip("。.")
+    return {
+        "project_name": profile["name"],
+        "one_liner": profile["tagline"],
+        "core_mechanism": profile["core_mechanism"],
+        "borrowable_points": profile["what_to_learn"],
+        "fit_for_jerry": profile["fit_for_jerry"],
+        "interview_questions": profile["questions"],
+        "plain_summary": (
+            f"{profile['name']} 值得看的不是表面功能，而是它背后的机制："
+            f"{mechanism}。我可以把这个机制抽出来，用在自己的 Jerry-Insight 项目里。"
+        ),
+    }
+
+
 def run_lifeops(event_type: str, goal: str) -> LifeOpsRun:
     if event_type not in RUNBOOKS:
         event_type = "gpt_researcher"
@@ -437,6 +455,7 @@ def run_lifeops(event_type: str, goal: str) -> LifeOpsRun:
         tool_calls=all_tool_calls,
         safety=safety,
         report=report,
+        sections=_sections(event_type),
         artifacts=[
             {"kind": "markdown", "title": f"{profile['name']} 研究报告", "content": report},
             {"kind": "json", "title": "research_trace", "content": [asdict(call) for call in all_tool_calls]},
