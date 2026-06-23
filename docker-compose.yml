@@ -1,0 +1,24 @@
+services:
+  rpc:
+    build:
+      context: ./cpp_rpc_lab
+    container_name: jerry_rpc_lab
+    volumes:
+      - rpc_data:/app/data
+    restart: unless-stopped
+
+  minichat:
+    build:
+      context: ./cpp_minichat
+    container_name: jerry_minichat
+    depends_on:
+      - rpc
+    ports:
+      - "19191:19191"
+    volumes:
+      - minichat_data:/app/data
+    restart: unless-stopped
+
+volumes:
+  rpc_data:
+  minichat_data:

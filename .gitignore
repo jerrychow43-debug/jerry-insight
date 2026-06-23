@@ -16,3 +16,15 @@ fullstack_agent/backend/fullstack_trace_logs.jsonl
 fullstack_agent/frontend/node_modules/
 fullstack_agent/frontend/.npm-cache/
 fullstack_agent/frontend/dist/
+
+# C++ backend demo build/runtime artifacts
+cpp_kv_server/kv_server
+cpp_kv_server/data/
+cpp_image_hosting/image_hosting
+cpp_image_hosting/data/
+cpp_image_hosting/uploads/
+cpp_minichat/minichat
+cpp_minichat/data/
+cpp_rpc_lab/rpc_server
+cpp_rpc_lab/rpc_client
+cpp_rpc_lab/data/
