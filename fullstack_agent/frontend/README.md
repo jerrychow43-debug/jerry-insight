@@ -1,17 +1,22 @@
-# Jerry-Insight Vue Frontend
+﻿# Jerry-Insight Pro Frontend
 
-这是省钱智探 Agent 的 Vue 3 前端演示版本，用于调用 FastAPI 后端接口。
+Vue 3 + Vite frontend for the Jerry-Insight Pro Agent workspace.
 
-## 启动
+Current UI has two main tabs:
 
-先启动后端：
+- `省钱智探 Pro`: purchase decision research with evidence, price sources, ledger context and human confirmation actions.
+- `ProjectOps 排障 Agent`: import a project directory, build a ProjectMap, search logs/code/config/runbooks and generate an incident triage report.
+
+## Local Run
+
+Start backend first:
 
 ```bash
 cd fullstack_agent/backend
 python -m uvicorn main:app --reload --port 8000
 ```
 
-再启动前端：
+Start frontend:
 
 ```bash
 cd fullstack_agent/frontend
@@ -19,9 +24,22 @@ npm install
 npm run dev
 ```
 
-打开：
+Open:
 
 ```text
 http://127.0.0.1:5173
 ```
 
+## Environment Variables
+
+For local development, the frontend defaults to:
+
+```text
+http://127.0.0.1:8000
+```
+
+For Vercel deployment, configure:
+
+```env
+VITE_API_BASE=https://your-render-backend.onrender.com
+```

@@ -1,42 +1,82 @@
-# Jerry-Insight FastAPI Backend
+﻿# Jerry-Insight Pro Backend
 
-这是省钱智探 Agent 的轻量 FastAPI 后端版本，用来练习和展示“前后端分离 + Agent API + SQLite 持久化”的全栈结构。
+FastAPI backend for the Jerry-Insight Pro Agent workspace.
 
-## AgentForge Lab
+The current version contains two engineering-style Agent flows instead of a generic chat page:
 
-当前后端新增了 `AgentForge Lab` API。它不是普通聊天接口，而是开源 Agent 项目研究工作台：
+1. Deal Research Agent
+2. ProjectOps Incident Agent
 
-```text
-研究对象 -> Runbook -> Toolset -> Memory Layers -> Safety Gate -> Research Report
-```
+## 1. Deal Research Agent
 
-借鉴点：
+Type: Data Agent + Search Agent + MCP tool calling
 
-- `HolmesGPT`：runbook、toolset、权限安全、什么时候人工介入。
-- `Letta / MemGPT`：core memory、recall memory、archival memory 三层记忆。
-- `GPT-Researcher`：planner / executor / publisher 的研究报告流程。
-- `Aider`：只选择和任务相关的上下文，不把所有资料塞给模型。
-
-## 功能
-
-- `GET /api/health`：检查服务状态
-- `POST /api/chat`：提交用户问题，返回 Agent 回复和耗时
-- `GET /api/history`：查看历史问答记录
-- `DELETE /api/history`：清空历史记录
-- `GET /api/lifeops/spec`：查看 AgentForge 研究对象、toolset 和 runbook
-- `POST /api/lifeops/run`：运行一次开源 Agent 项目研究
-- `GET /api/lifeops/runs`：查看最近研究记录
-
-AgentForge 当前支持四个研究对象：
+This flow upgrades the original "省钱智探" project into a purchase decision research workflow:
 
 ```text
-gpt_researcher  GPT-Researcher planner/executor/publisher
-letta           Letta / MemGPT 三层 memory
-holmesgpt       HolmesGPT runbook/toolset/safety
-aider           Aider repo map / context selection
+purchase intent -> search/ledger/memory evidence -> evidence layer -> decision report -> human confirmation
 ```
 
-## 启动
+Core capabilities:
+
+- Reuses `original_pipeline.py` for Tavily search, price clues, LLM audit and price parsing.
+- Reads local ledger, current surplus, history and blocked items.
+- Produces evidence cards, price sources, personal budget context and a purchase recommendation.
+- Keeps purchase confirmation and skip-purchase as explicit human actions.
+
+## 2. ProjectOps Incident Agent
+
+Type: project-aware AIOps Agent + MCP tool calling
+
+This flow does not guess without context. The user imports a project directory, then the Agent reads real files, configs, logs and runbooks through MCP-style tools:
+
+```text
+import project -> project.scan -> ProjectMap -> incident input -> MCP tool calls -> evidence panel -> diagnosis report -> safety gate
+```
+
+MCP tools include:
+
+- `project.scan`: scan a real project directory and build a ProjectMap.
+- `project.code.search`: search real code and config files.
+- `project.logs.search`: search log files in the imported project.
+- `project.config.scan`: scan Docker, env and dependency config.
+- `project.runbook.search`: search runbooks and incident documents.
+- `finance.context.read`: read the Deal Research ledger context.
+
+## MCP API
+
+- `GET /api/mcp/tools`: list MCP tools.
+- `POST /api/mcp`: JSON-RPC style MCP call.
+
+Example:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "1",
+  "method": "tools/call",
+  "params": {
+    "name": "project.scan",
+    "arguments": {
+      "project_path": "C:\\Users\\Jerry\\Desktop\\AIstudy\\Jerry-Insight-Pro"
+    }
+  }
+}
+```
+
+## Business API
+
+- `POST /api/deal-research/run`
+- `GET /api/deal-research/runs`
+- `POST /api/project-ops/import`
+- `GET /api/project-ops/projects`
+- `POST /api/project-ops/incident`
+- `GET /api/project-ops/incidents`
+- `POST /api/chat`
+- `GET /api/ledger`
+- `GET /api/profile`
+
+## Local Run
 
 ```bash
 cd fullstack_agent/backend
@@ -44,17 +84,17 @@ pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 ```
 
-启动后打开：
+Open health check:
 
 ```text
-http://localhost:8000/docs
+http://127.0.0.1:8000/api/health
 ```
 
-## 环境变量
-
-可以复用项目根目录 `.env`：
+## Environment Variables
 
 ```env
 DEEPSEEK_API_KEY=your_key
 DEEPSEEK_BASE_URL=https://api.deepseek.com
+TAVILY_API_KEY=your_search_key
+DINGTALK_WEBHOOK=your_optional_dingtalk_webhook
 ```

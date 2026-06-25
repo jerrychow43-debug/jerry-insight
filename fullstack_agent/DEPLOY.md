@@ -1,108 +1,89 @@
-# Vue + FastAPI 上线部署说明
+﻿# Jerry-Insight Pro Deployment
 
-推荐组合：
+Recommended deployment:
 
-- 后端：Render
-- 前端：Vercel
+- Backend: Render Web Service
+- Frontend: Vercel Project
 
-## 1. 先提交代码到 GitHub
+The latest local version is the two-tab Agent workspace:
 
-在项目根目录执行：
+- `省钱智探 Pro`
+- `ProjectOps 排障 Agent`
+
+If the deployed site still shows `AgentForge Lab`, it is an older Vercel build and needs redeployment from the latest GitHub commit.
+
+## 1. Push Code To GitHub
+
+From the repository root:
 
 ```bash
 git add fullstack_agent .gitignore
-git commit -m "add vue fastapi fullstack agent"
+git commit -m "Update Jerry Insight Pro agent workspace"
 git push
 ```
 
-## 2. 部署 FastAPI 后端到 Render
+Do not commit `.env`, local databases, logs, `node_modules`, or cache folders.
 
-1. 打开 Render，新建 `Web Service`。
-2. 选择你的 GitHub 仓库。
-3. Root Directory 填：
+## 2. Deploy Backend To Render
 
-```text
-fullstack_agent/backend
-```
+Create or update a Render `Web Service`.
 
-4. Build Command 填：
-
-```bash
-pip install -r requirements.txt
-```
-
-5. Start Command 填：
-
-```bash
-uvicorn main:app --host 0.0.0.0 --port $PORT
-```
-
-6. Environment Variables 里添加：
+Settings:
 
 ```text
-DEEPSEEK_API_KEY=你的 DeepSeek Key
+Root Directory: fullstack_agent/backend
+Build Command: pip install -r requirements.txt
+Start Command: uvicorn main:app --host 0.0.0.0 --port $PORT
+```
+
+Environment variables:
+
+```text
+DEEPSEEK_API_KEY=your_deepseek_key
 DEEPSEEK_BASE_URL=https://api.deepseek.com
-TAVILY_API_KEY=你的 Tavily Key
-DINGTALK_WEBHOOK=你的钉钉机器人 Webhook
+TAVILY_API_KEY=your_tavily_key
+DINGTALK_WEBHOOK=your_optional_dingtalk_webhook
 ```
 
-7. 部署完成后，记录后端地址，例如：
+After deployment, test:
 
 ```text
-https://jerry-insight-api.onrender.com
+https://your-render-service.onrender.com/api/health
 ```
 
-测试：
+Expected response contains:
+
+```json
+{
+  "status": "ok",
+  "service": "jerry-insight-agent-api"
+}
+```
+
+## 3. Deploy Frontend To Vercel
+
+Create or update a Vercel project.
+
+Settings:
 
 ```text
-https://jerry-insight-api.onrender.com/api/health
+Root Directory: fullstack_agent/frontend
+Framework Preset: Vite
+Build Command: npm run build
+Output Directory: dist
 ```
 
-## 3. 部署 Vue 前端到 Vercel
-
-1. 打开 Vercel，新建 Project。
-2. 选择同一个 GitHub 仓库。
-3. Root Directory 填：
+Environment variables:
 
 ```text
-fullstack_agent/frontend
+VITE_API_BASE=https://your-render-service.onrender.com
 ```
 
-4. Framework Preset 选择：
+Redeploy after changing `VITE_API_BASE`.
 
-```text
-Vite
-```
+## 4. Deployment Notes
 
-5. Build Command：
-
-```bash
-npm run build
-```
-
-6. Output Directory：
-
-```text
-dist
-```
-
-7. Environment Variables 添加：
-
-```text
-VITE_API_BASE=https://你的 Render 后端地址
-```
-
-例如：
-
-```text
-VITE_API_BASE=https://jerry-insight-api.onrender.com
-```
-
-8. 部署完成后，Vercel 会给你一个前端公网地址。
-
-## 4. 注意事项
-
-- 前端不能填 `127.0.0.1:8000`，上线后必须填 Render 后端公网地址。
-- Render 免费服务可能冷启动，第一次打开会慢一点。
-- 当前 SQLite 数据库在 Render 免费环境里不适合长期稳定持久化，演示可以，正式长期使用建议迁移到云数据库。
-- 不要把 `.env` 提交到 GitHub，只提交 `.env.example`。
+- Vercel must not use `127.0.0.1:8000` in production.
+- Render free services can cold start, so the first request may be slow.
+- Render free filesystem persistence is not reliable for long-term data. SQLite is fine for demo use, but a production version should use a managed database.
+- ProjectOps can only scan directories available to the backend environment. On Render, it cannot scan your Windows local path unless that project exists in the deployed filesystem.

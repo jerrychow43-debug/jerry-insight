@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -15,7 +15,10 @@ from db import (
     list_history,
     list_ledger,
 )
+from deal_research_service import list_deal_runs, run_deal_research
+from mcp_gateway import mcp_gateway
 from notifier import notify_async
+from project_ops_service import import_project, list_incident_runs, list_projects, run_incident
 from lifeops_service import list_runs as list_lifeops_runs
 from lifeops_service import list_specs as list_lifeops_specs
 from lifeops_service import run_lifeops
@@ -57,6 +60,32 @@ class LifeOpsRunRequest(BaseModel):
     goal: str = Field(..., min_length=1, max_length=1200)
 
 
+class DealResearchRequest(BaseModel):
+    query: str = Field(..., min_length=1, max_length=1200)
+
+
+class McpJsonRpcRequest(BaseModel):
+    jsonrpc: str = "2.0"
+    id: str | int | None = None
+    method: str
+    params: dict = Field(default_factory=dict)
+
+
+class ProjectImportRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    project_path: str = Field(..., min_length=1, max_length=500)
+
+
+class IncidentRunRequest(BaseModel):
+    project_id: str = Field(..., min_length=1, max_length=80)
+    incident_type: str = Field(default="", max_length=80)
+    service: str = Field(default="", max_length=120)
+    error_log: str = Field(default="", max_length=4000)
+    recent_change: str = Field(default="", max_length=1600)
+    impact: str = Field(default="", max_length=1200)
+    alert: str = Field(default="", max_length=1600)
+
+
 @app.on_event("startup")
 def startup():
     init_db()
@@ -84,6 +113,61 @@ def lifeops_runs():
 @app.post("/api/lifeops/run")
 def lifeops_run(req: LifeOpsRunRequest):
     return run_lifeops(req.event_type, req.goal)
+
+
+@app.post("/api/deal-research/run")
+def deal_research_run(req: DealResearchRequest):
+    return run_deal_research(req.query)
+
+
+@app.get("/api/deal-research/runs")
+def deal_research_runs():
+    return {"items": list_deal_runs()}
+
+
+@app.post("/api/mcp")
+def mcp_json_rpc(req: McpJsonRpcRequest):
+    return mcp_gateway.handle_json_rpc(req.dict())
+
+
+@app.get("/api/mcp/tools")
+def mcp_tools():
+    return {"tools": mcp_gateway.list_tools()}
+
+
+@app.post("/api/project-ops/import")
+def project_ops_import(req: ProjectImportRequest):
+    try:
+        return import_project(req.name, req.project_path)
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@app.get("/api/project-ops/projects")
+def project_ops_projects():
+    return {"items": list_projects()}
+
+
+@app.post("/api/project-ops/incident")
+def project_ops_incident(req: IncidentRunRequest):
+    if not any([req.alert.strip(), req.error_log.strip(), req.service.strip(), req.recent_change.strip(), req.impact.strip()]):
+        raise HTTPException(status_code=400, detail="请至少填写服务、错误日志、最近变更或影响范围中的一项。")
+    return run_incident(
+        req.project_id,
+        {
+            "incident_type": req.incident_type,
+            "service": req.service,
+            "error_log": req.error_log,
+            "recent_change": req.recent_change,
+            "impact": req.impact,
+            "alert": req.alert,
+        },
+    )
+
+
+@app.get("/api/project-ops/incidents")
+def project_ops_incidents():
+    return {"items": list_incident_runs()}
 
 
 @app.post("/api/chat")

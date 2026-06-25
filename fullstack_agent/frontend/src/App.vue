@@ -1,546 +1,498 @@
 <template>
   <main class="app-shell">
-    <section class="top-bar">
+    <header class="top-bar">
       <div>
-        <p class="eyebrow">AgentForge Lab</p>
-        <h1>开源 Agent 项目研究工作台</h1>
+        <p class="eyebrow">Jerry Insight Pro</p>
+        <h1>工程化 Agent 工作台</h1>
       </div>
       <div class="backend-pill" :class="{ online: backendOk }">
         <span></span>
         <strong>{{ backendOk ? "后端已连接" : "后端未连接" }}</strong>
       </div>
-    </section>
+    </header>
 
-    <section class="lifeops-workspace">
-      <section class="lifeops-hero">
+    <nav class="mode-tabs" aria-label="Project modes">
+      <button type="button" :class="{ active: activeTab === 'deal' }" @click="activeTab = 'deal'">
+        省钱智探 Pro
+      </button>
+      <button type="button" :class="{ active: activeTab === 'ops' }" @click="activeTab = 'ops'">
+        ProjectOps 排障 Agent
+      </button>
+    </nav>
+
+    <section v-if="activeTab === 'deal'" class="project-layout">
+      <section class="hero-panel">
         <div>
-          <p class="eyebrow">Event-driven Agent Runtime</p>
-          <h2>AgentForge Lab</h2>
+          <p class="eyebrow">Data Agent + Search Agent + MCP</p>
+          <h2>把旧省钱智探升级成消费决策工程应用</h2>
           <p>
-            研究优质开源 Agent 项目，提取它们真正值得学的机制，再映射到 Jerry 自己的项目里。
-            这里不是聊天入口，而是 Agent 项目研究工作台。
+            复用 Tavily、平台定向搜索、账本、记忆和确认购买闭环。新版会把搜索来源整理成 evidence、decision、event trace 和可执行动作。
           </p>
         </div>
-        <button class="primary-button" type="button" :disabled="lifeopsLoading" @click="runLifeOps">
-          {{ lifeopsLoading ? "研究中" : "开始研究" }}
-        </button>
-      </section>
-
-      <section class="lifeops-main-grid">
-        <section class="lifeops-left">
-          <section class="lifeops-card event-card">
-            <header class="side-header">
-              <h2>研究对象</h2>
-              <button class="text-button" type="button" @click="loadLifeOpsSpec">刷新</button>
-            </header>
-            <div class="event-list compact-events">
-              <button
-                v-for="event in lifeopsSpec.event_types"
-                :key="event.id"
-                type="button"
-                :class="{ active: selectedLifeOpsEvent === event.id }"
-                @click="selectLifeOpsEvent(event)"
-              >
-                <strong>{{ event.name }}</strong>
-                <span>{{ event.description }}</span>
-              </button>
-            </div>
-          </section>
-
-          <section class="lifeops-card goal-card">
-            <header class="side-header">
-              <h2>研究目标</h2>
-            </header>
-            <textarea v-model="lifeopsGoal" rows="6" placeholder="描述你想研究的 Agent 项目机制，以及希望怎么结合到自己的项目"></textarea>
-            <div class="toolset-strip">
-              <span v-for="toolset in lifeopsSpec.toolsets" :key="toolset.name">
-                {{ toolset.name }}
-              </span>
-            </div>
-          </section>
-
-          <section class="lifeops-card runbook-card">
-            <header class="side-header">
-              <h2>Runbook</h2>
-              <span>{{ currentRunbook.length }} steps</span>
-            </header>
-            <ol class="runbook-list compact-runbook">
-              <li v-for="step in currentRunbook" :key="step.name">
-                <strong>{{ step.name }}</strong>
-                <span>{{ step.description }}</span>
-                <code>{{ step.toolset.join(" / ") }}</code>
-              </li>
-            </ol>
-          </section>
-        </section>
-
-        <section class="lifeops-right">
-          <section v-if="latestLifeOpsRun" class="lifeops-card latest-result">
-            <header class="side-header">
-              <h2>研究结果</h2>
-              <span>{{ latestLifeOpsRun.run_id }}</span>
-            </header>
-
-            <section class="plain-report focus-report">
-              <div class="plain-head">
-                <span>这次研究的是</span>
-                <strong>{{ latestLifeOpsRun.sections.project_name }}</strong>
-                <p>{{ latestLifeOpsRun.sections.one_liner }}</p>
-              </div>
-
-              <div class="focus-grid">
-                <div class="focus-card primary">
-                  <small>它到底强在哪</small>
-                  <strong>{{ latestLifeOpsRun.sections.core_mechanism }}</strong>
-                </div>
-                <div class="focus-card">
-                  <small>我项目可以怎么用</small>
-                  <strong>{{ latestLifeOpsRun.sections.fit_for_jerry }}</strong>
-                </div>
-                <div class="focus-card">
-                  <small>当前产物是什么</small>
-                  <strong>一份面向 Jerry-Insight 的开源 Agent 机制研究卡片。</strong>
-                </div>
-              </div>
-
-              <div class="plain-block highlight">
-                <h3>先看这里：可借鉴点</h3>
-                <ul>
-                  <li v-for="point in latestLifeOpsRun.sections.borrowable_points" :key="point">
-                    {{ point }}
-                  </li>
-                </ul>
-              </div>
-              <div class="plain-block">
-                <h3>可以落到我项目里的改动</h3>
-                <ul>
-                  <li v-for="target in latestLifeOpsRun.sections.implementation_targets" :key="target">
-                    {{ target }}
-                  </li>
-                </ul>
-              </div>
-              <div class="plain-block">
-                <h3>面试官可能追问</h3>
-                <ul>
-                  <li v-for="question in latestLifeOpsRun.sections.interview_questions" :key="question">
-                    {{ question }}
-                  </li>
-                </ul>
-              </div>
-            </section>
-
-            <details class="technical-details">
-              <summary>技术细节：Runbook / Memory / Safety（面试展开讲，不是主内容）</summary>
-              <div class="latest-columns">
-                <section>
-                  <h3>Runbook Trace</h3>
-                  <div v-for="step in latestLifeOpsRun.step_results" :key="`latest-${step.step}`" class="mini-block trace-step">
-                    <strong>{{ step.step }}</strong>
-                    <span>{{ step.finding }}</span>
-                    <div class="tool-chip-row">
-                      <span v-for="call in step.tool_calls" :key="`latest-${step.step}-${call.tool}`">{{ call.tool }}</span>
-                    </div>
-                  </div>
-                </section>
-                <section>
-                  <h3>Safety Gate</h3>
-                  <div class="mini-block">
-                    <strong>{{ latestLifeOpsRun.safety.requires_human ? "需要人工确认" : "无需人工确认" }}</strong>
-                    <span>{{ latestLifeOpsRun.safety.reason }}</span>
-                  </div>
-                  <h3>Memory</h3>
-                  <div v-for="layer in latestLifeOpsRun.memory" :key="`latest-${layer.name}`" class="mini-block">
-                    <strong>{{ layer.name }}</strong>
-                    <span>{{ layer.items.length }} items</span>
-                  </div>
-                </section>
-              </div>
-            </details>
-
-            <details class="report-box latest-report">
-              <summary>查看 Markdown 原文</summary>
-              <pre>{{ latestLifeOpsRun.report }}</pre>
-            </details>
-          </section>
-
-          <section v-else class="lifeops-card latest-result empty-latest">
-            <h2>等待研究</h2>
-            <p>选择一个开源 Agent 项目，填写研究目标，点击右上角“开始研究”。结果会直接显示在这里。</p>
-          </section>
-        </section>
-      </section>
-
-      <section class="lifeops-runs">
-        <header class="panel-header">
-          <div>
-            <h2>Research Runs</h2>
-            <p>每次研究都会展示核心机制、可借鉴点、memory evidence、runbook trace 和面试追问。</p>
-          </div>
-          <button class="icon-button" type="button" title="刷新运行记录" @click="loadLifeOpsRuns">↻</button>
-        </header>
-
-        <article v-for="run in lifeopsRuns.slice(1)" :key="run.run_id" class="lifeops-run">
-          <div class="run-title">
-            <div>
-              <strong>{{ run.title }}</strong>
-              <span>{{ run.run_id }} · {{ run.status }} · {{ run.created_at }}</span>
-            </div>
-            <span class="risk-pill" :class="run.safety.level">{{ run.safety.level }}</span>
-          </div>
-
-          <section class="summary-card">
-            <div>
-              <small>事件状态</small>
-              <strong>{{ run.summary.status_label }}</strong>
-            </div>
-            <div>
-              <small>可信度</small>
-              <strong>{{ run.summary.confidence }}</strong>
-            </div>
-            <div>
-              <small>证据数量</small>
-              <strong>{{ run.summary.evidence_count }}</strong>
-            </div>
-            <div class="summary-wide">
-              <small>结论</small>
-              <strong>{{ run.summary.conclusion }}</strong>
-            </div>
-            <div class="summary-wide">
-              <small>推荐下一步</small>
-              <strong>{{ run.summary.recommended_action }}</strong>
-            </div>
-          </section>
-
-          <div class="run-columns">
-            <section>
-              <h3>Memory Layers</h3>
-              <div v-for="layer in run.memory" :key="layer.name" class="mini-block">
-                <strong>{{ layer.name }}</strong>
-                <span>{{ layer.role }}</span>
-                <small>{{ layer.items.length }} items</small>
-              </div>
-            </section>
-
-            <section>
-              <h3>Runbook Trace</h3>
-              <div v-for="step in run.step_results" :key="`${run.run_id}-${step.step}`" class="mini-block trace-step">
-                <strong>{{ step.step }}</strong>
-                <span>{{ step.finding }}</span>
-                <small>{{ step.description }}</small>
-                <div class="tool-chip-row">
-                  <span v-for="call in step.tool_calls" :key="`${step.step}-${call.tool}`">
-                    {{ call.tool }}
-                  </span>
-                </div>
-              </div>
-            </section>
-
-            <section>
-              <h3>Safety Gate</h3>
-              <div class="mini-block">
-                <strong>{{ run.safety.requires_human ? "需要人工确认" : "无需人工确认" }}</strong>
-                <span>{{ run.safety.reason }}</span>
-                <small v-if="run.safety.blocked_actions.length">
-                  blocked: {{ run.safety.blocked_actions.join(", ") }}
-                </small>
-              </div>
-            </section>
-          </div>
-
-          <details class="report-box" open>
-            <summary>处置报告</summary>
-            <pre>{{ run.report }}</pre>
-          </details>
-        </article>
-
-        <p v-if="lifeopsRuns.length <= 1" class="empty-note">暂无更多历史研究记录。</p>
-      </section>
-    </section>
-
-    <section v-if="false" class="workspace">
-      <section class="chat-panel">
-        <header class="panel-header">
-          <div>
-            <h2>Agent 对话</h2>
-            <p>问商品、直接记账、改账、撤销都从这里输入。</p>
-          </div>
-          <button class="icon-button" type="button" title="刷新数据" @click="refreshAll">↻</button>
-        </header>
-
-        <div class="messages" ref="messageBox">
-          <article v-for="message in messages" :key="message.id" class="message" :class="message.role">
-            <span class="message-role">{{ message.role === "user" ? "你" : "Agent" }}</span>
-            <p v-if="message.role === 'user' || message.intent !== 'shopping_audit'" class="message-text">
-              {{ message.content }}
-            </p>
-
-            <section v-if="message.payload && message.intent === 'shopping_audit'" class="audit-result">
-              <div class="audit-summary">
-                <div>
-                  <small>商品</small>
-                  <strong>{{ message.payload.item || "-" }}</strong>
-                </div>
-                <div>
-                  <small>估算单价</small>
-                  <strong>{{ formatMoney(message.payload.price) }}</strong>
-                </div>
-                <div>
-                  <small>搜索来源</small>
-                  <strong>{{ message.payload.search_sources?.length || 0 }} 条</strong>
-                </div>
-                <div>
-                  <small>比价线索</small>
-                  <strong>{{ priceRows(message.payload).length }} 条</strong>
-                </div>
-              </div>
-
-              <div class="detail-section">
-                <h3>网址与情报来源</h3>
-                <ul v-if="message.payload.search_sources?.length" class="source-list">
-                  <li v-for="(source, index) in message.payload.search_sources" :key="`s-${index}`">
-                    <div>
-                      <strong>来源 {{ index + 1 }}<template v-if="source.score"> · 匹配 {{ source.score }}</template></strong>
-                      <p>{{ source.summary }}</p>
-                    </div>
-                    <a v-if="source.url" :href="source.url" target="_blank" rel="noreferrer">打开</a>
-                  </li>
-                </ul>
-                <p v-else class="empty-note">这次没有拿到可展示的网址来源。</p>
-              </div>
-
-              <div class="detail-section">
-                <h3>比价与价格线索</h3>
-                <div v-if="priceRows(message.payload).length" class="data-table">
-                  <div class="table-row table-head">
-                    <span>平台</span>
-                    <span>说明</span>
-                    <span>链接</span>
-                  </div>
-                  <div v-for="(row, index) in priceRows(message.payload)" :key="`p-${index}`" class="table-row">
-                    <span>{{ row.platform || "价格来源" }}</span>
-                    <span>{{ row.info || "-" }}</span>
-                    <a v-if="row.url" :href="row.url" target="_blank" rel="noreferrer">打开</a>
-                    <span v-else>-</span>
-                  </div>
-                </div>
-                <p v-else class="empty-note">这次没有拿到可展示的比价线索。</p>
-              </div>
-
-              <div class="detail-section advice-section">
-                <h3>购买建议</h3>
-                <p>{{ message.payload.display_answer || message.content }}</p>
-              </div>
-
-              <div class="action-row">
-                <button class="primary-button" type="button" @click="confirmPurchase(message)">确认购入并记账</button>
-                <button class="secondary-button" type="button" @click="skipPurchase(message)">放弃购买</button>
-              </div>
-            </section>
-          </article>
-
-          <div v-if="messages.length === 0" class="empty-state">
-            <strong>试试输入：我想买东方树叶</strong>
-            <span>也可以输入：买了雪碧花了3块 / 撤销上一条 / 加回来3块</span>
-          </div>
-        </div>
-
-        <form class="composer" @submit.prevent="sendMessage">
-          <input
-            v-model="input"
-            :disabled="loading"
-            placeholder="输入：我想买可乐 / 买了雪碧花了3块 / 撤销上一条"
-          />
-          <button type="submit" :disabled="loading || !input.trim()">
-            {{ loading ? "处理中" : "发送" }}
+        <form class="query-box" @submit.prevent="runDealResearch">
+          <textarea
+            v-model="dealQuery"
+            rows="3"
+            placeholder="例如：我想买一个 1000 元以内适合写代码的显示器，帮我研究值不值得买"
+          ></textarea>
+          <button class="primary-button" type="submit" :disabled="dealLoading || !dealQuery.trim()">
+            {{ dealLoading ? "研究中..." : "生成购买研究报告" }}
           </button>
         </form>
       </section>
 
-      <aside class="side-panel">
-        <section class="side-card">
-          <div class="status-line">
-            <span>{{ backendMessage }}</span>
+      <section v-if="latestDealRun" class="result-grid">
+        <article class="decision-card">
+          <small>最终建议</small>
+          <strong>{{ latestDealRun.decision.verdict }}</strong>
+          <p>{{ latestDealRun.decision.reason }}</p>
+          <div class="decision-meta">
+            <span>可信度：{{ latestDealRun.decision.confidence }}</span>
+            <span>预算：{{ latestDealRun.decision.budget ? `${latestDealRun.decision.budget} 元` : "未识别" }}</span>
+            <span>估算价：{{ formatMoney(latestDealRun.decision.estimated_price) }}</span>
           </div>
+          <div class="action-row">
+            <button class="light-button" type="button" @click="confirmDealPurchase">确认购买并记账</button>
+            <button class="ghost-button" type="button" @click="skipDealPurchase">放弃购买</button>
+          </div>
+        </article>
+
+        <article class="context-card">
+          <h3>省钱智探能力复用结果</h3>
           <div class="metric-grid">
             <div>
+              <small>Tavily 来源</small>
+              <strong>{{ latestDealRun.legacy_audit.search_sources.length }} 条</strong>
+            </div>
+            <div>
+              <small>平台价格来源</small>
+              <strong>{{ latestDealRun.legacy_audit.price_table.length }} 条</strong>
+            </div>
+            <div>
+              <small>搜索补充来源</small>
+              <strong>{{ latestDealRun.legacy_audit.crawler_sources.length }} 条</strong>
+            </div>
+            <div>
               <small>当前余额</small>
-              <strong>{{ formatMoney(currentSurplus) }}</strong>
-            </div>
-            <div>
-              <small>最近意图</small>
-              <strong>{{ latestIntent || "-" }}</strong>
-            </div>
-            <div>
-              <small>总耗时</small>
-              <strong>{{ latestLatency ? `${latestLatency} ms` : "-" }}</strong>
-            </div>
-            <div>
-              <small>阶段数</small>
-              <strong>{{ latestTrace?.stages?.length || 0 }}</strong>
+              <strong>{{ formatMoney(latestDealRun.personal_context.current_surplus) }}</strong>
             </div>
           </div>
-          <div v-if="latestTrace?.stages?.length" class="trace-list">
-            <div v-for="stage in latestTrace.stages" :key="stage.name + stage.latency_ms">
-              <span>{{ stage.name }}</span>
-              <strong>{{ stage.latency_ms }} ms</strong>
+        </article>
+
+        <article class="wide-card">
+          <div class="section-head">
+            <h3>Planner 拆解</h3>
+            <span>{{ latestDealRun.product }}</span>
+          </div>
+          <div class="question-list">
+            <div v-for="question in latestDealRun.questions" :key="question.owner">
+              <strong>{{ question.owner }} <span class="zh-label">{{ roleLabel(question.owner) }}</span></strong>
+              <p>{{ question.question }}</p>
+              <small>{{ question.purpose }}</small>
             </div>
           </div>
-        </section>
+        </article>
 
-        <section class="side-card">
-          <header class="side-header">
-            <h2>直接记账 / 改账</h2>
-            <button class="text-button" type="button" @click="undoLedger">撤销</button>
-          </header>
-          <div class="ledger-form">
-            <input v-model="ledgerItem" placeholder="商品，例如 雪碧" />
-            <input v-model="ledgerAmount" type="number" min="0" step="0.01" placeholder="金额" />
-            <div class="form-actions">
-              <button class="primary-button" type="button" @click="quickRecord">扣钱记账</button>
-              <button class="secondary-button" type="button" @click="quickRefund">加回余额</button>
+        <article class="wide-card">
+          <div class="section-head">
+            <h3>多 Agent 编排</h3>
+            <span>{{ latestDealRun.agent_runs?.length || 0 }} agents · {{ latestDealRun.mcp_calls?.length || 0 }} MCP calls</span>
+          </div>
+          <div class="agent-grid">
+            <div v-for="agent in latestDealRun.agent_runs || []" :key="agent.agent" class="agent-card">
+              <small>{{ agent.status }}</small>
+              <strong>{{ agent.agent }} <span class="zh-label">{{ agentLabel(agent.agent) }}</span></strong>
+              <p>{{ agent.role }}</p>
+              <em>{{ agent.summary }}</em>
+              <div class="tool-chip-row">
+                <span v-for="call in agent.tool_calls" :key="`${agent.agent}-${call.tool}`">{{ call.tool }}</span>
+              </div>
             </div>
           </div>
-        </section>
+        </article>
 
-        <section class="side-card">
-          <header class="side-header">
-            <h2>历史记录</h2>
-            <button class="text-button" type="button" @click="clearHistory">清空</button>
-          </header>
-          <ul class="compact-list">
-            <li v-for="item in history" :key="item.id" @click="input = item.user_message">
-              <strong>{{ item.user_message }}</strong>
-              <span>{{ item.intent }} · {{ item.latency_ms }} ms</span>
-            </li>
-          </ul>
-          <p v-if="history.length === 0" class="empty-note">暂无历史</p>
-        </section>
+        <article class="wide-card">
+          <div class="section-head">
+            <h3>证据卡片</h3>
+            <span>{{ latestDealRun.evidence.length }} 条</span>
+          </div>
+          <div class="evidence-grid">
+            <div v-for="item in latestDealRun.evidence" :key="`${item.category}-${item.title}-${item.url}`" class="evidence-card">
+              <small>{{ item.category }} · {{ categoryLabel(item.category) }} · {{ item.confidence }}</small>
+              <strong>{{ item.title }}</strong>
+              <span v-if="item.price_text" class="price-badge">{{ item.price_text }}</span>
+              <p>{{ item.summary }}</p>
+              <a v-if="item.url" :href="item.url" target="_blank" rel="noreferrer">打开来源</a>
+              <span v-else>{{ item.source }}</span>
+            </div>
+          </div>
+        </article>
 
-        <section class="side-card">
-          <header class="side-header">
-            <h2>购入物品</h2>
-            <button class="text-button" type="button" @click="loadLedger">刷新</button>
-          </header>
-          <ul class="compact-list">
-            <li v-for="item in purchasedItems" :key="`purchased-${item.id}`">
-              <strong>{{ item.item }} · {{ formatMoney(item.amount) }}</strong>
-              <span>{{ item.created_at }} · {{ item.status }}</span>
-            </li>
-          </ul>
-          <p v-if="purchasedItems.length === 0" class="empty-note">暂无购入记录</p>
-        </section>
+        <article class="wide-card">
+          <div class="section-head">
+            <h3>价格与来源</h3>
+            <span>Tavily / 平台定向搜索来源</span>
+          </div>
+          <div class="source-table">
+            <div class="table-row table-head">
+              <span>类型</span>
+              <span>价格</span>
+              <span>说明</span>
+              <span>域名</span>
+              <span>链接</span>
+            </div>
+            <div v-for="row in sourceRows" :key="`${row.type}-${row.url}-${row.info}`" class="table-row">
+              <span>{{ row.type }}</span>
+              <strong :class="{ muted: !row.priceText }">{{ row.priceText || "未在摘要暴露" }}</strong>
+              <span>{{ row.info }}</span>
+              <span>{{ row.domain || "-" }}</span>
+              <a v-if="row.url" :href="row.url" target="_blank" rel="noreferrer">打开</a>
+              <span v-else>-</span>
+            </div>
+          </div>
+        </article>
 
-        <section class="side-card">
-          <header class="side-header">
-            <h2>拦截 / 放弃</h2>
-          </header>
-          <ul class="compact-list">
-            <li v-for="item in blockedItems" :key="item.id">
-              <strong>{{ item.item }}</strong>
-              <span>{{ item.created_at }} · {{ item.reason }}</span>
-            </li>
-          </ul>
-          <p v-if="blockedItems.length === 0" class="empty-note">暂无拦截记录</p>
-        </section>
-      </aside>
+        <article class="wide-card">
+          <details open>
+            <summary>省钱智探原始判断</summary>
+            <pre>{{ latestDealRun.legacy_audit.display_answer || "暂无原始判断" }}</pre>
+          </details>
+        </article>
+
+        <article class="wide-card">
+          <div class="section-head">
+            <h3>账本与历史</h3>
+            <span>来自 finance.context.read</span>
+          </div>
+          <div class="history-grid">
+            <section>
+              <h4>最近账本</h4>
+              <div v-for="row in latestDealRun.personal_context.recent_ledger || []" :key="`ledger-${row.id}`" class="history-row">
+                <strong>{{ row.item }}</strong>
+                <span>{{ formatMoney(row.amount) }} · {{ row.status }} · {{ row.created_at }}</span>
+              </div>
+              <p v-if="!(latestDealRun.personal_context.recent_ledger || []).length" class="empty-note">暂无账本记录。</p>
+            </section>
+            <section>
+              <h4>历史与放弃购买</h4>
+              <div v-for="row in latestDealRun.personal_context.blocked_items || []" :key="`blocked-${row.id}`" class="history-row">
+                <strong>{{ row.item }}</strong>
+                <span>{{ row.reason }} · {{ row.created_at }}</span>
+              </div>
+              <div v-for="row in latestDealRun.personal_context.history || []" :key="`history-${row.id}`" class="history-row">
+                <strong>{{ row.intent }}</strong>
+                <span>{{ row.user_message }}</span>
+              </div>
+              <p v-if="!(latestDealRun.personal_context.blocked_items || []).length && !(latestDealRun.personal_context.history || []).length" class="empty-note">暂无历史记录。</p>
+            </section>
+          </div>
+        </article>
+      </section>
+
+      <section v-else class="empty-panel">
+        <strong>先输入一个真实购买意图。</strong>
+        <span>这里会展示联网搜索、价格来源、个人账本上下文和购买动作。</span>
+      </section>
+    </section>
+
+    <section v-else class="project-layout">
+      <section class="hero-panel">
+        <div>
+          <p class="eyebrow">Project Import + MCP Tool Calling</p>
+          <h2>先导入自己的项目，再基于真实文件排障</h2>
+          <p>
+            这个 Agent 不做万能猜测。它通过 MCP 工具扫描你导入的项目目录，读取真实代码、配置、日志和 runbook，再对故障描述做证据驱动分析。
+          </p>
+        </div>
+        <form class="query-box" @submit.prevent="importOpsProject">
+          <input v-model="opsProjectName" placeholder="项目名，例如 Jerry Insight Pro" />
+          <input v-model="opsProjectPath" placeholder="项目路径，例如 C:\\Users\\Jerry\\Desktop\\AIstudy\\Jerry-Insight-Pro" />
+          <button class="primary-button" type="submit" :disabled="opsImporting || !opsProjectPath.trim()">
+            {{ opsImporting ? "导入中..." : "导入项目并生成 ProjectMap" }}
+          </button>
+          <p v-if="opsImportError" class="form-error">{{ opsImportError }}</p>
+        </form>
+      </section>
+
+      <section v-if="currentProject" class="ops-grid">
+        <article class="score-card">
+          <small>当前项目</small>
+          <strong>{{ currentProject.name }}</strong>
+          <p>{{ currentProject.project_map.scanned_files }} 个文件 · {{ currentProject.project_map.api_routes.length }} 个 API · {{ currentProject.project_map.services.length }} 个服务信号</p>
+        </article>
+
+        <article class="pitch-card">
+          <h3>处置方式</h3>
+          <p>先收集故障事件，再读取项目文件、日志、配置和文档，最后输出检查清单。</p>
+          <div class="tool-chip-row">
+            <span>项目建图</span>
+            <span>日志检索</span>
+            <span>代码定位</span>
+            <span>安全门</span>
+          </div>
+        </article>
+
+        <article class="wide-card">
+          <div class="section-head">
+            <h3>ProjectMap</h3>
+            <span>{{ currentProject.project_id }}</span>
+          </div>
+          <div class="legacy-grid">
+            <div>
+              <small>扫描文件</small>
+              <strong>{{ currentProject.project_map.scanned_files }}</strong>
+            </div>
+            <div>
+              <small>服务信号</small>
+              <strong>{{ currentProject.project_map.services.length }}</strong>
+            </div>
+            <div>
+              <small>API 路由</small>
+              <strong>{{ currentProject.project_map.api_routes.length }}</strong>
+            </div>
+            <div>
+              <small>Runbook 文档</small>
+              <strong>{{ currentProject.project_map.runbooks.length }}</strong>
+            </div>
+          </div>
+        </article>
+
+        <article class="wide-card">
+          <div class="section-head">
+            <h3>创建故障事件</h3>
+            <span>信息越具体，定位越可靠</span>
+          </div>
+          <form class="incident-box" @submit.prevent="runIncident">
+            <div class="incident-form-grid">
+              <label>
+                <span>故障类型</span>
+                <select v-model="incidentType">
+                  <option value="api_error">接口报错</option>
+                  <option value="startup_error">启动失败</option>
+                  <option value="latency_high">超时 / 变慢</option>
+                  <option value="dependency_error">依赖异常</option>
+                  <option value="deploy_related">部署后异常</option>
+                </select>
+              </label>
+              <label>
+                <span>服务 / 模块</span>
+                <input v-model="incidentService" placeholder="例如 fullstack_agent/backend 或 order-service" />
+              </label>
+            </div>
+            <label class="field-block">
+              <span>错误日志 / traceback</span>
+              <textarea
+                v-model="incidentErrorLog"
+                rows="5"
+                placeholder="粘贴后端终端报错、HTTP 状态码、timeout 日志或 import error 堆栈"
+              ></textarea>
+            </label>
+            <div class="incident-form-grid">
+              <label>
+                <span>最近变更</span>
+                <input v-model="incidentRecentChange" placeholder="例如 刚改了依赖、路径、环境变量、部署配置" />
+              </label>
+              <label>
+                <span>影响范围</span>
+                <input v-model="incidentImpact" placeholder="例如 后端启动失败 / 某个接口 500 / 前端连不上" />
+              </label>
+            </div>
+            <button class="primary-button" type="submit" :disabled="incidentLoading || !incidentAlert.trim()">
+              {{ incidentLoading ? "分析中..." : "生成处置方案" }}
+            </button>
+          </form>
+        </article>
+
+        <template v-if="latestIncident">
+          <article class="decision-card">
+            <small>处置结论</small>
+            <strong>{{ confidenceLabel(latestIncident.diagnosis.confidence) }}</strong>
+            <p>{{ latestIncident.resolution?.headline || latestIncident.diagnosis.primary }}</p>
+            <div class="decision-meta">
+              <span>证据：{{ latestIncident.diagnosis.evidence_count }}</span>
+              <span>服务：{{ latestIncident.resolution?.service || latestIncident.signals.service || "未知" }}</span>
+            </div>
+          </article>
+
+          <article class="context-card">
+            <h3>证据充分性</h3>
+            <div class="metric-grid">
+              <div>
+                <small>判断</small>
+                <strong>{{ latestIncident.resolution?.evidence_state || evidenceQuality }}</strong>
+              </div>
+              <div>
+                <small>日志</small>
+                <strong>{{ latestIncident.resolution?.evidence_counts?.logs || 0 }} 条</strong>
+              </div>
+              <div>
+                <small>代码</small>
+                <strong>{{ latestIncident.resolution?.evidence_counts?.code || 0 }} 条</strong>
+              </div>
+              <div>
+                <small>安全门</small>
+                <strong>{{ latestIncident.diagnosis.needs_human_confirmation ? "危险动作需确认" : "只读" }}</strong>
+              </div>
+            </div>
+          </article>
+
+          <article class="wide-card">
+            <div class="section-head">
+              <h3>下一步检查清单</h3>
+              <span>按顺序处理</span>
+            </div>
+            <div class="checklist-grid">
+              <div v-for="(check, index) in latestIncident.next_checks || []" :key="check.title" class="check-card">
+                <small>Step {{ index + 1 }}</small>
+                <strong>{{ check.title }}</strong>
+                <p>{{ check.detail }}</p>
+                <span>{{ check.target }}</span>
+              </div>
+            </div>
+          </article>
+
+          <article class="wide-card">
+            <div class="section-head">
+              <h3>证据摘要</h3>
+              <span>只展示和处置有关的证据</span>
+            </div>
+            <div class="evidence-grid">
+              <div v-for="item in evidenceCards" :key="item.title" class="evidence-card">
+                <small>{{ item.type }}</small>
+                <strong>{{ item.title }}</strong>
+                <p>{{ item.summary }}</p>
+              </div>
+            </div>
+            <p v-if="!evidenceCards.length" class="empty-note">
+              当前没有命中真实日志或代码证据。建议导入包含 logs 目录的项目，或把报错堆栈保存为 .log/.jsonl 后重新运行。
+            </p>
+          </article>
+
+          <article class="wide-card">
+            <details>
+              <summary>技术细节：Runbook / 多 Agent / MCP 调用</summary>
+              <div class="technical-stack">
+                <section>
+                  <h4>Runbook 计划</h4>
+                  <div v-for="step in latestIncident.plan" :key="step.step" class="history-row">
+                    <strong>{{ step.step }}</strong>
+                    <span>{{ step.why }} · {{ step.tool }}</span>
+                  </div>
+                </section>
+                <section>
+                  <h4>Agent 链路</h4>
+                  <div v-for="agent in latestIncident.agent_runs || []" :key="agent.agent" class="history-row">
+                    <strong>{{ agent.agent }} · {{ agentLabel(agent.agent) }}</strong>
+                    <span>{{ agent.summary }}</span>
+                  </div>
+                </section>
+              </div>
+              <pre>{{ JSON.stringify(latestIncident.mcp_calls, null, 2) }}</pre>
+            </details>
+          </article>
+
+          <article class="wide-card">
+            <details>
+              <summary>排障报告 Markdown</summary>
+              <pre>{{ latestIncident.report }}</pre>
+            </details>
+          </article>
+        </template>
+      </section>
+
+      <section v-else class="empty-panel">
+        <strong>先导入一个真实项目目录。</strong>
+        <span>导入后，Agent 才能通过 MCP 工具读取项目上下文并排障。</span>
+      </section>
     </section>
   </main>
 </template>
 
 <script setup>
 import axios from "axios";
-import { computed, nextTick, onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
 
-const input = ref("");
-const loading = ref(false);
+const activeTab = ref("deal");
 const backendOk = ref(false);
-const backendMessage = ref("正在检查后端服务");
-const messages = ref([]);
-const history = ref([]);
-const ledger = ref([]);
-const blockedItems = ref([]);
-const latestIntent = ref("");
-const latestLatency = ref("");
-const latestTrace = ref(null);
-const currentSurplus = ref("");
-const messageBox = ref(null);
-const ledgerItem = ref("");
-const ledgerAmount = ref("");
-const AGENTFORGE_FALLBACK_SPEC = {
-  event_types: [
-    {
-      id: "gpt_researcher",
-      name: "GPT-Researcher",
-      description: "研究 planner / executor / publisher，以及 citation 和报告质量。",
-      example: "研究 GPT-Researcher 的核心机制，看看哪些点能借鉴到我的项目里。",
-    },
-    {
-      id: "letta",
-      name: "Letta / MemGPT",
-      description: "研究三层 memory architecture：core、recall、archival。",
-      example: "研究 Letta 的记忆系统，看看怎么用于我的面试准备和项目复盘。",
-    },
-    {
-      id: "holmesgpt",
-      name: "HolmesGPT",
-      description: "研究 AIOps agent 的 runbook、toolset、权限安全和 fallback。",
-      example: "研究 HolmesGPT 的 runbook 和 toolset 设计，看看我的项目能怎么借鉴。",
-    },
-    {
-      id: "aider",
-      name: "Aider",
-      description: "研究 repo map、代码上下文筛选和 Git undo 机制。",
-      example: "研究 Aider 的 repo map，看看能不能做我的项目资料 map。",
-    },
-  ],
-  toolsets: [
-    { name: "project_profile_toolset" },
-    { name: "local_context_toolset" },
-    { name: "adaptation_toolset" },
-    { name: "report_toolset" },
-  ],
-  runbooks: {
-    gpt_researcher: [
-      { name: "load_profile", description: "读取开源项目的定位、核心机制和典型追问。", toolset: ["project_profile_toolset"] },
-      { name: "read_my_context", description: "读取我的项目/笔记上下文，找到可以映射的地方。", toolset: ["local_context_toolset"] },
-      { name: "extract_borrowable_points", description: "提取可借鉴点，避免写成生硬二改方案。", toolset: ["adaptation_toolset"] },
-      { name: "publish_report", description: "生成研究报告、面试追问和结合建议。", toolset: ["report_toolset"] },
-    ],
-    letta: [
-      { name: "load_profile", description: "读取开源项目的定位、核心机制和典型追问。", toolset: ["project_profile_toolset"] },
-      { name: "read_my_context", description: "读取我的项目/笔记上下文，找到可以映射的地方。", toolset: ["local_context_toolset"] },
-      { name: "extract_borrowable_points", description: "提取可借鉴点，避免写成生硬二改方案。", toolset: ["adaptation_toolset"] },
-      { name: "publish_report", description: "生成研究报告、面试追问和结合建议。", toolset: ["report_toolset"] },
-    ],
-    holmesgpt: [
-      { name: "load_profile", description: "读取开源项目的定位、核心机制和典型追问。", toolset: ["project_profile_toolset"] },
-      { name: "read_my_context", description: "读取我的项目/笔记上下文，找到可以映射的地方。", toolset: ["local_context_toolset"] },
-      { name: "extract_borrowable_points", description: "提取可借鉴点，避免写成生硬二改方案。", toolset: ["adaptation_toolset"] },
-      { name: "publish_report", description: "生成研究报告、面试追问和结合建议。", toolset: ["report_toolset"] },
-    ],
-    aider: [
-      { name: "load_profile", description: "读取开源项目的定位、核心机制和典型追问。", toolset: ["project_profile_toolset"] },
-      { name: "read_my_context", description: "读取我的项目/笔记上下文，找到可以映射的地方。", toolset: ["local_context_toolset"] },
-      { name: "extract_borrowable_points", description: "提取可借鉴点，避免写成生硬二改方案。", toolset: ["adaptation_toolset"] },
-      { name: "publish_report", description: "生成研究报告、面试追问和结合建议。", toolset: ["report_toolset"] },
-    ],
-  },
-};
 
-const lifeopsSpec = ref(AGENTFORGE_FALLBACK_SPEC);
-const selectedLifeOpsEvent = ref("gpt_researcher");
-const lifeopsGoal = ref("研究 GPT-Researcher 的核心机制，看看哪些点能借鉴到我的项目里。");
-const lifeopsRuns = ref([]);
-const lifeopsLoading = ref(false);
+const dealQuery = ref("我想买一个 1000 元以内适合写代码的显示器，帮我研究值不值得买");
+const dealLoading = ref(false);
+const dealRuns = ref([]);
 
-const currentRunbook = computed(() => lifeopsSpec.value.runbooks?.[selectedLifeOpsEvent.value] || []);
-const latestLifeOpsRun = computed(() => lifeopsRuns.value[0] || null);
+const opsProjectName = ref("Jerry Insight Pro");
+const opsProjectPath = ref("C:\\Users\\Jerry\\Desktop\\AIstudy\\Jerry-Insight-Pro");
+const opsImporting = ref(false);
+const opsImportError = ref("");
+const opsProjects = ref([]);
+const incidentType = ref("api_error");
+const incidentService = ref("fullstack_agent/backend");
+const incidentErrorLog = ref("ImportError: cannot import name ...\n或粘贴 uvicorn 终端里的完整 traceback");
+const incidentRecentChange = ref("刚修改了后端 import / requirements / 启动路径");
+const incidentImpact = ref("后端接口报错，前端显示后端未连接或请求失败");
+const incidentLoading = ref(false);
+const incidentRuns = ref([]);
+const mcpTools = ref([]);
 
-const purchasedItems = computed(() =>
-  ledger.value.filter((item) => item.status === "active" && item.amount > 0).slice(0, 12)
+const latestDealRun = computed(() => dealRuns.value[0] || null);
+const currentProject = computed(() => opsProjects.value[0] || null);
+const latestIncident = computed(() => incidentRuns.value[0] || null);
+const incidentAlert = computed(() =>
+  [incidentType.value, incidentService.value, incidentErrorLog.value, incidentRecentChange.value, incidentImpact.value]
+    .filter(Boolean)
+    .join("\n")
 );
+
+const sourceRows = computed(() => {
+  const legacy = latestDealRun.value?.legacy_audit;
+  if (!legacy) return [];
+  const priceRows = (legacy.price_table || []).map((row) => ({
+    type: row.platform || "平台价格来源",
+    priceText: row.price_text || "",
+    info: row.info || "点击链接核实实时价格",
+    domain: row.domain || "",
+    url: row.url || "",
+  }));
+  const crawlerRows = (legacy.crawler_sources || []).map((row) => ({
+    type: row.platform || "搜索补充来源",
+    priceText: row.price_text || "",
+    info: row.info || "优惠线索",
+    domain: row.domain || "",
+    url: row.url || "",
+  }));
+  return [...priceRows, ...crawlerRows];
+});
+
+const evidenceCards = computed(() => {
+  const run = latestIncident.value;
+  if (!run) return [];
+  const cards = [];
+  for (const item of run.evidence.logs.slice(0, 4)) {
+    cards.push({ type: "log", title: `${item.file}:${item.line}`, summary: item.snippet });
+  }
+  for (const item of run.evidence.code.slice(0, 4)) {
+    cards.push({ type: "code", title: `${item.file}:${item.line}`, summary: item.snippet });
+  }
+  for (const item of run.evidence.configs.slice(0, 4)) {
+    cards.push({ type: "config", title: item.file, summary: (item.signals || []).join(", ") || "配置文件" });
+  }
+  for (const item of run.evidence.runbooks.slice(0, 2)) {
+    cards.push({ type: "runbook", title: item.file, summary: item.snippet });
+  }
+  return cards;
+});
+
+const evidenceQuality = computed(() => {
+  const run = latestIncident.value;
+  if (!run) return "-";
+  const logs = run.evidence.logs?.length || 0;
+  const code = run.evidence.code?.length || 0;
+  if (logs && code) return "日志+代码";
+  if (logs) return "仅日志";
+  if (code) return "仅代码";
+  return "缺少运行证据";
+});
 
 function formatMoney(value) {
   if (value === "" || value === null || value === undefined) return "-";
@@ -549,228 +501,172 @@ function formatMoney(value) {
   return `${num.toFixed(2)} 元`;
 }
 
-function priceRows(payload) {
-  return [...(payload?.price_table || []), ...(payload?.crawler_sources || [])];
+function roleLabel(owner) {
+  const labels = {
+    "Price Researcher": "价格研究员",
+    "Risk Researcher": "风险研究员",
+    "Alternative Researcher": "替代品研究员",
+    "Personal Context Agent": "个人上下文 Agent",
+  };
+  return labels[owner] || "研究员";
+}
+
+function categoryLabel(category) {
+  const labels = {
+    price: "价格",
+    deal: "优惠",
+    risk: "风险",
+    fallback: "降级",
+  };
+  return labels[category] || category;
+}
+
+function confidenceLabel(confidence) {
+  const labels = {
+    high: "高可信",
+    medium: "中可信",
+    low: "低可信",
+  };
+  return labels[confidence] || confidence;
+}
+
+function agentLabel(agent) {
+  const labels = {
+    "Price Research Agent": "价格研究",
+    "Risk Evidence Agent": "风险证据",
+    "Personal Finance Agent": "个人财务",
+    "Decision Agent": "决策融合",
+    "Project Mapper Agent": "项目建图",
+    "Runbook Agent": "预案检索",
+    "Log Investigator Agent": "日志调查",
+    "Code Investigator Agent": "代码调查",
+    "Diagnosis Agent": "根因诊断",
+  };
+  return labels[agent] || "Agent";
 }
 
 async function checkBackend() {
   try {
     const res = await axios.get(`${API_BASE}/api/health`);
     backendOk.value = res.data.status === "ok";
-    backendMessage.value = res.data.service || "FastAPI running";
-    currentSurplus.value = res.data.current_surplus;
   } catch (err) {
     backendOk.value = false;
-    backendMessage.value = "请先启动 FastAPI 后端";
   }
 }
 
-async function loadProfile() {
+async function loadMcpTools() {
   try {
-    const res = await axios.get(`${API_BASE}/api/profile`);
-    currentSurplus.value = res.data.current_surplus;
+    const res = await axios.get(`${API_BASE}/api/mcp/tools`);
+    mcpTools.value = res.data.tools || [];
   } catch (err) {
-    currentSurplus.value = "";
+    mcpTools.value = [];
   }
 }
 
-async function loadHistory() {
+async function loadDealRuns() {
   try {
-    const res = await axios.get(`${API_BASE}/api/history?limit=30`);
-    history.value = res.data.items || [];
+    const res = await axios.get(`${API_BASE}/api/deal-research/runs`);
+    dealRuns.value = res.data.items || [];
   } catch (err) {
-    history.value = [];
+    dealRuns.value = [];
   }
 }
 
-async function loadLedger() {
+async function loadOpsProjects() {
   try {
-    const res = await axios.get(`${API_BASE}/api/ledger?limit=40`);
-    ledger.value = res.data.items || [];
+    const res = await axios.get(`${API_BASE}/api/project-ops/projects`);
+    opsProjects.value = res.data.items || [];
   } catch (err) {
-    ledger.value = [];
+    opsProjects.value = [];
   }
 }
 
-async function loadBlocked() {
+async function loadIncidentRuns() {
   try {
-    const res = await axios.get(`${API_BASE}/api/blocked?limit=30`);
-    blockedItems.value = res.data.items || [];
+    const res = await axios.get(`${API_BASE}/api/project-ops/incidents`);
+    incidentRuns.value = res.data.items || [];
   } catch (err) {
-    blockedItems.value = [];
+    incidentRuns.value = [];
   }
 }
 
-async function loadLifeOpsSpec() {
+async function runDealResearch() {
+  if (!dealQuery.value.trim() || dealLoading.value) return;
+  dealLoading.value = true;
   try {
-    const res = await axios.get(`${API_BASE}/api/lifeops/spec`);
-    const incoming = res.data || {};
-    const ids = (incoming.event_types || []).map((item) => item.id);
-    lifeopsSpec.value = ids.includes("gpt_researcher") ? incoming : AGENTFORGE_FALLBACK_SPEC;
-    if (!selectedLifeOpsEvent.value && lifeopsSpec.value.event_types?.length) {
-      selectLifeOpsEvent(lifeopsSpec.value.event_types[0]);
-    }
-  } catch (err) {
-    lifeopsSpec.value = AGENTFORGE_FALLBACK_SPEC;
-  }
-}
-
-async function loadLifeOpsRuns() {
-  try {
-    const res = await axios.get(`${API_BASE}/api/lifeops/runs`);
-    lifeopsRuns.value = res.data.items || [];
-  } catch (err) {
-    lifeopsRuns.value = [];
-  }
-}
-
-function selectLifeOpsEvent(event) {
-  selectedLifeOpsEvent.value = event.id;
-  lifeopsGoal.value = event.example || lifeopsGoal.value;
-}
-
-async function runLifeOps() {
-  if (!lifeopsGoal.value.trim() || lifeopsLoading.value) return;
-  lifeopsLoading.value = true;
-  try {
-    await axios.post(`${API_BASE}/api/lifeops/run`, {
-      event_type: selectedLifeOpsEvent.value,
-      goal: lifeopsGoal.value,
-    });
-    await loadLifeOpsRuns();
+    const res = await axios.post(`${API_BASE}/api/deal-research/run`, { query: dealQuery.value });
+    dealRuns.value = [res.data, ...dealRuns.value.filter((item) => item.run_id !== res.data.run_id)];
+    await checkBackend();
   } finally {
-    lifeopsLoading.value = false;
+    dealLoading.value = false;
   }
 }
 
-async function clearHistory() {
-  await axios.delete(`${API_BASE}/api/history`);
-  history.value = [];
-}
-
-async function refreshAll() {
-  await checkBackend();
-  await loadHistory();
-  await loadLedger();
-  await loadBlocked();
-  await loadProfile();
-}
-
-async function scrollToBottom() {
-  await nextTick();
-  if (messageBox.value) {
-    messageBox.value.scrollTop = messageBox.value.scrollHeight;
-  }
-}
-
-async function sendMessage() {
-  const message = input.value.trim();
-  if (!message || loading.value) return;
-
-  messages.value.push({
-    id: `user-${Date.now()}`,
-    role: "user",
-    content: message,
-  });
-  input.value = "";
-  loading.value = true;
-  await scrollToBottom();
-
-  try {
-    const res = await axios.post(`${API_BASE}/api/chat`, { message });
-    if (res.data.intent === "shopping_audit") {
-      latestIntent.value = res.data.intent;
-      latestLatency.value = res.data.latency_ms;
-      latestTrace.value = res.data.trace;
-    } else if (!latestTrace.value) {
-      latestIntent.value = res.data.intent;
-      latestLatency.value = res.data.latency_ms;
-      latestTrace.value = res.data.trace;
-    }
-    messages.value.push({
-      id: `agent-${res.data.id || Date.now()}`,
-      role: "assistant",
-      content: res.data.reply,
-      intent: res.data.intent,
-      payload: res.data.payload,
-      trace: res.data.trace,
-    });
-    await refreshAll();
-  } catch (err) {
-    messages.value.push({
-      id: `error-${Date.now()}`,
-      role: "assistant",
-      content: "请求失败，请确认 FastAPI 后端正在 8000 端口运行。",
-      intent: "error",
-    });
-  } finally {
-    loading.value = false;
-    await scrollToBottom();
-  }
-}
-
-async function confirmPurchase(message) {
-  const item = message.payload?.item;
-  const suggested = message.payload?.price || 15;
-  if (!item) return;
-  const amountText = window.prompt(`请输入「${item}」实际记账金额`, suggested);
+async function confirmDealPurchase() {
+  const run = latestDealRun.value;
+  if (!run) return;
+  const suggested = run.decision.estimated_price || run.legacy_audit?.estimated_price || 15;
+  const amountText = window.prompt(`请输入「${run.product}」实际记账金额`, suggested);
   const amount = Number(amountText);
   if (!amount || amount <= 0) return;
-  const res = await axios.post(`${API_BASE}/api/confirm-purchase`, {
-    item,
+  await axios.post(`${API_BASE}/api/confirm-purchase`, {
+    item: run.product,
     amount,
-    raw_query: item,
+    raw_query: run.query,
   });
-  messages.value.push({
-    id: `confirm-${Date.now()}`,
-    role: "assistant",
-    content: `已确认购入：${res.data.item}，扣除 ${res.data.amount} 元。当前余额 ${res.data.current_surplus} 元。`,
-    intent: "confirm_purchase",
-  });
-  await refreshAll();
+  await checkBackend();
 }
 
-async function skipPurchase(message) {
-  const item = message.payload?.item || "该商品";
+async function skipDealPurchase() {
+  const run = latestDealRun.value;
+  if (!run) return;
   await axios.post(`${API_BASE}/api/skip-purchase`, {
-    item,
-    reason: "用户在审计结果后选择放弃购买",
-    raw_query: item,
+    item: run.product,
+    reason: "用户在 Deal Research 后选择放弃购买",
+    raw_query: run.query,
   });
-  messages.value.push({
-    id: `skip-${Date.now()}`,
-    role: "assistant",
-    content: `已放弃购买：${item}。本次未扣除余额。`,
-    intent: "skip_purchase",
-  });
-  await loadBlocked();
 }
 
-async function quickRecord() {
-  if (!ledgerItem.value.trim() || !Number(ledgerAmount.value)) return;
-  input.value = `买了${ledgerItem.value.trim()}花了${ledgerAmount.value}元`;
-  await sendMessage();
-  ledgerItem.value = "";
-  ledgerAmount.value = "";
+async function importOpsProject() {
+  if (!opsProjectPath.value.trim() || opsImporting.value) return;
+  opsImporting.value = true;
+  opsImportError.value = "";
+  try {
+    const res = await axios.post(`${API_BASE}/api/project-ops/import`, {
+      name: opsProjectName.value,
+      project_path: opsProjectPath.value,
+    });
+    opsProjects.value = [res.data, ...opsProjects.value.filter((item) => item.project_id !== res.data.project_id)];
+    activeTab.value = "ops";
+  } catch (err) {
+    opsImportError.value = err.response?.data?.detail || "导入失败，请确认路径是本机存在的项目文件夹。";
+  } finally {
+    opsImporting.value = false;
+  }
 }
 
-async function quickRefund() {
-  if (!Number(ledgerAmount.value)) return;
-  const item = ledgerItem.value.trim() || "余额修正";
-  input.value = `加回来${item}${ledgerAmount.value}元`;
-  await sendMessage();
-  ledgerItem.value = "";
-  ledgerAmount.value = "";
-}
-
-async function undoLedger() {
-  input.value = "撤销上一条";
-  await sendMessage();
+async function runIncident() {
+  const project = currentProject.value;
+  if (!project || !incidentAlert.value.trim() || incidentLoading.value) return;
+  incidentLoading.value = true;
+  try {
+    const res = await axios.post(`${API_BASE}/api/project-ops/incident`, {
+      project_id: project.project_id,
+      incident_type: incidentType.value,
+      service: incidentService.value,
+      error_log: incidentErrorLog.value,
+      recent_change: incidentRecentChange.value,
+      impact: incidentImpact.value,
+      alert: incidentAlert.value,
+    });
+    incidentRuns.value = [res.data, ...incidentRuns.value.filter((item) => item.run_id !== res.data.run_id)];
+  } finally {
+    incidentLoading.value = false;
+  }
 }
 
 onMounted(async () => {
-  await refreshAll();
-  await loadLifeOpsSpec();
-  await loadLifeOpsRuns();
+  await checkBackend();
+  await Promise.all([loadMcpTools(), loadDealRuns(), loadOpsProjects(), loadIncidentRuns()]);
 });
 </script>

@@ -37,6 +37,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 load_dotenv()
 
 WEB_SEARCH_TIMEOUT_SECONDS = int(os.getenv("WEB_SEARCH_TIMEOUT_SECONDS", "25"))
+ENABLE_PRICE_CRAWLER = os.getenv("ENABLE_PRICE_CRAWLER", "false").lower() == "true"
 TRACE_FILE = Path(__file__).resolve().parent / "fullstack_trace_logs.jsonl"
 EXECUTOR = ThreadPoolExecutor(max_workers=8)
 
@@ -286,6 +287,8 @@ def run_web_search(item):
 
 
 def run_price_crawler(item):
+    if not ENABLE_PRICE_CRAWLER:
+        return []
     try:
         from tools.price_crawler import crawl_smzdm_price
 
@@ -371,13 +374,13 @@ def run_original_pipeline(query, chat_history=None):
         trace_stage(trace, "web_search", stage_started, result_count=len(info_blocks or []))
     except FutureTimeoutError:
         info_blocks = []
-        raw_info_text = f"外部 Web Search 超过 {WEB_SEARCH_TIMEOUT_SECONDS} 秒未返回，本次审计将基于历史偏好、爬虫线索和模型常识继续生成。"
+        raw_info_text = f"外部 Web Search 超过 {WEB_SEARCH_TIMEOUT_SECONDS} 秒未返回，本次审计将基于历史偏好、已缓存搜索线索和模型常识继续生成。"
         price_table_data = [{"平台": "外部搜索超时", "参考报价/情报说明": "本次未等到 Web Search 返回", "数据出处": ""}]
         trace["errors"].append({"stage": "web_search", "error": f"timeout after {WEB_SEARCH_TIMEOUT_SECONDS}s"})
         trace_stage(trace, "web_search", stage_started, status="timeout", result_count=0)
     except Exception as err:
         info_blocks = []
-        raw_info_text = f"外部 Web Search 异常：{err}。本次审计将基于历史偏好、爬虫线索和模型常识继续生成。"
+        raw_info_text = f"外部 Web Search 异常：{err}。本次审计将基于历史偏好、已缓存搜索线索和模型常识继续生成。"
         price_table_data = [{"平台": "外部搜索异常", "参考报价/情报说明": "Web Search 未成功返回", "数据出处": ""}]
         trace["errors"].append({"stage": "web_search", "error": str(err)})
         trace_stage(trace, "web_search", stage_started, status="fallback", result_count=0)
@@ -385,11 +388,17 @@ def run_original_pipeline(query, chat_history=None):
     stage_started = time.perf_counter()
     try:
         crawler_results = future_crawler.result(timeout=2.5)
-        trace_stage(trace, "price_crawler", stage_started, result_count=len(crawler_results or []))
+        trace_stage(
+            trace,
+            "search_price_adapter",
+            stage_started,
+            result_count=len(crawler_results or []),
+            mode="disabled" if not ENABLE_PRICE_CRAWLER else "crawler",
+        )
     except Exception as err:
         crawler_results = []
-        trace["errors"].append({"stage": "price_crawler", "error": str(err)})
-        trace_stage(trace, "price_crawler", stage_started, status="timeout")
+        trace["errors"].append({"stage": "search_price_adapter", "error": str(err)})
+        trace_stage(trace, "search_price_adapter", stage_started, status="timeout")
 
     if crawler_results:
         raw_info_text = "【什么值得买精选行情】\n" + compact_price_context(crawler_results) + "\n\n" + raw_info_text
