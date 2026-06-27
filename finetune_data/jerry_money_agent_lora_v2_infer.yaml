@@ -1,0 +1,4 @@
+model_name_or_path: /root/autodl-tmp/models/Qwen2.5-1.5B-Instruct
+adapter_name_or_path: saves/jerry_money_agent_lora_v2
+template: qwen
+finetuning_type: lora

@@ -1,0 +1,60 @@
+{
+  "date": "2026-06-26",
+  "project": "Jerry-Insight-Pro / ???? Agent",
+  "task": "LoRA fine-tuning for input parsing: user text -> intent/item/amount/action JSON",
+  "framework": "LLaMA-Factory 0.9.6.dev0",
+  "base_model": "Qwen2.5-1.5B-Instruct",
+  "model_path": "/root/autodl-tmp/models/Qwen2.5-1.5B-Instruct",
+  "adapter_path": "saves/jerry_money_agent_lora_v2",
+  "hardware": "AutoDL RTX 4090D 24GB",
+  "training": {
+    "num_examples": 155,
+    "epochs": 3,
+    "total_optimization_steps": 117,
+    "trainable_params": 9232384,
+    "all_params_during_training": 1552946688,
+    "trainable_percent": 0.5945,
+    "final_train_loss": 0.2385,
+    "train_runtime": "0:02:26.21",
+    "train_samples_per_second": 3.18,
+    "train_steps_per_second": 0.8,
+    "training_loss_plot": "saves/jerry_money_agent_lora_v2/training_loss.png",
+    "adapter_config_verified": "saves/jerry_money_agent_lora_v2/adapter_config.json"
+  },
+  "inference": {
+    "adapter_loaded": true,
+    "loaded_adapter_log": "Loaded adapter(s): saves/jerry_money_agent_lora_v2",
+    "examples": [
+      {
+        "input": "????99?????????????",
+        "output_observed_utf8_fixed": {
+          "intent": "??",
+          "item": "????",
+          "amount": 99,
+          "action": "??"
+        },
+        "improvement": "item is clean and amount is numeric"
+      },
+      {
+        "input": "??????28??????",
+        "output_observed_utf8_fixed": {
+          "intent": "??",
+          "item": "??",
+          "amount": 28,
+          "action": "??"
+        },
+        "improvement": "ledger intent, item and numeric amount are extracted"
+      }
+    ]
+  },
+  "known_limitations": [
+    "Terminal pasted log contains mojibake because of encoding, but the semantic output was verified from screenshots.",
+    "intent/action still output Chinese labels instead of fixed enum values like price_audit and ledger_add.",
+    "No automated test metrics were produced yet; current evidence is training log plus manual inference examples."
+  ],
+  "recommended_next_steps": [
+    "Add stronger enum-label examples and negative samples.",
+    "Run a small evaluation script on the 50 test samples.",
+    "Use the parser before intent_router and keep the original rules as fallback."
+  ]
+}

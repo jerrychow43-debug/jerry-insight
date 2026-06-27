@@ -1,4 +1,4 @@
-import os
+﻿import os
 import time
 import json
 import re
@@ -52,6 +52,7 @@ from tools.price_crawler import crawl_smzdm_price
 from core.jerry_fsm_agent import JerryFSMAgent      
 from data.sql_db import save_audit_log
 from dotenv import load_dotenv
+from streamlit_pro_workbench import render_streamlit_pro_workbench
 
 load_dotenv()
 
@@ -802,6 +803,7 @@ def callback_execute_cancel():
 # ==========================================================
 with st.sidebar:
     st.header("🕵️智能体调度中心")
+    app_mode = st.radio("展示模式", ["省钱智探 Pro 工作台", "旧版聊天审计"], index=0)
     st.write("---")
     
     def super_clear_all_states():
@@ -928,6 +930,10 @@ with st.sidebar:
         )
     else:
         st.caption("暂无 Trace。运行一次商品问价后会自动生成。")
+
+if app_mode == "省钱智探 Pro 工作台":
+    render_streamlit_pro_workbench(callback_execute_confirm, callback_execute_cancel, get_dynamic_profile)
+    st.stop()
 
 st.title("🛡️省钱智探agent")
 dynamic_profile = get_dynamic_profile()

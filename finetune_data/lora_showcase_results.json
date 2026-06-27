@@ -1,0 +1,46 @@
+{
+  "base_project": "Jerry-Insight-Pro / ???? Agent",
+  "fine_tuning_task": "Natural language spending input -> strict JSON parse for intent, item, amount, action",
+  "model": "Qwen2.5-1.5B-Instruct",
+  "method": "SFT + LoRA via LLaMA-Factory",
+  "hardware": "AutoDL RTX 4090D 24GB",
+  "train_samples": 155,
+  "test_samples": 50,
+  "observations": [
+    {
+      "input": "????99?????????????",
+      "before_or_small_sample": {
+        "intent": "??",
+        "item": "99?????",
+        "amount": "99?",
+        "action": "??"
+      },
+      "lora_v2_output": {
+        "intent": "??",
+        "item": "????",
+        "amount": 99,
+        "action": "??"
+      },
+      "improvement": [
+        "item no longer contains price",
+        "amount is numeric",
+        "JSON is compact and parseable"
+      ]
+    },
+    {
+      "input": "??????28??????",
+      "lora_v2_output": {
+        "intent": "??",
+        "item": "??",
+        "amount": 28,
+        "action": "??"
+      },
+      "improvement": [
+        "ledger scenario is separated from purchase audit",
+        "item and amount are extracted cleanly"
+      ]
+    }
+  ],
+  "known_gap": "intent/action still prefer Chinese labels instead of fixed enum values like price_audit or ledger_add.",
+  "next_step": "Add more schema-enforcement samples and evaluate JSON validity, intent accuracy, item accuracy, and amount accuracy."
+}

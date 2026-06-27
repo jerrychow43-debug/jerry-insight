@@ -110,6 +110,12 @@ def _path_text(base: Path, path: Path) -> str:
     return _rel(base, path).lower()
 
 
+def _context_lines(lines: list[str], index: int, radius: int = 1) -> str:
+    start = max(0, index - radius)
+    end = min(len(lines), index + radius + 1)
+    return " | ".join(line.strip() for line in lines[start:end] if line.strip())
+
+
 def _is_noise_doc(base: Path, path: Path) -> bool:
     rel = _path_text(base, path)
     return any(marker in rel for marker in NOISE_NAME_MARKERS)
@@ -191,15 +197,27 @@ def _code_search(args: dict[str, Any]) -> ToolResult:
     for path in _iter_text_files(base):
         text = _safe_read(path, 24000)
         lowered = text.lower()
-        if not all(term in lowered for term in terms):
+        matched = [term for term in terms if term in lowered]
+        if not matched:
             continue
-        for line_no, line in enumerate(text.splitlines(), start=1):
+        lines = text.splitlines()
+        for line_no, line in enumerate(lines, start=1):
             line_lower = line.lower()
             if any(term in line_lower for term in terms):
-                results.append({"file": _rel(base, path), "line": line_no, "snippet": line.strip()[:220]})
+                context = _context_lines(lines, line_no - 1, radius=1)
+                score = len(matched) + sum(1 for term in terms if term in line_lower)
+                results.append({
+                    "file": _rel(base, path),
+                    "line": line_no,
+                    "snippet": line.strip()[:220],
+                    "context": context[:520],
+                    "matched_terms": matched[:8],
+                    "score": score,
+                })
                 break
         if len(results) >= max_results:
             break
+    results.sort(key=lambda item: item.get("score", 0), reverse=True)
     return _text_result(f"Found {len(results)} code matches for {query}.", {"query": query, "matches": results})
 
 
@@ -216,7 +234,8 @@ def _log_search(args: dict[str, Any]) -> ToolResult:
     candidates = [p for p in _iter_text_files(base) if _is_log_candidate(base, p)]
     for path in candidates:
         text = _safe_read(path, 36000)
-        for line_no, line in enumerate(text.splitlines(), start=1):
+        lines = text.splitlines()
+        for line_no, line in enumerate(lines, start=1):
             lower = line.lower()
             if service and service not in lower and service not in path.as_posix().lower():
                 continue
@@ -224,9 +243,21 @@ def _log_search(args: dict[str, Any]) -> ToolResult:
                 continue
             if terms and not any(term in lower for term in terms):
                 continue
-            results.append({"file": _rel(base, path), "line": line_no, "snippet": line.strip()[:260]})
+            score = 0
+            score += 2 if service and (service in lower or service in path.as_posix().lower()) else 0
+            score += sum(2 for term in strong_terms if term in lower or term in path.as_posix().lower())
+            score += sum(1 for term in terms if term in lower)
+            results.append({
+                "file": _rel(base, path),
+                "line": line_no,
+                "snippet": line.strip()[:260],
+                "context": _context_lines(lines, line_no - 1, radius=1)[:520],
+                "score": score,
+            })
             if len(results) >= 40:
+                results.sort(key=lambda item: item.get("score", 0), reverse=True)
                 return _text_result(f"Found {len(results)} log matches.", {"matches": results})
+    results.sort(key=lambda item: item.get("score", 0), reverse=True)
     return _text_result(f"Found {len(results)} log matches.", {"matches": results})
 
 

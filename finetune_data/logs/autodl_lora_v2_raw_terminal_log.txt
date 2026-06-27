@@ -1,0 +1,1031 @@
+to a higher value to use more memory (at your own risk).
+Loading weights: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 338/338 [00:00<00:00, 393.73it/s]
+[INFO|configuration_utils.py:978] 2026-06-26 19:30:09,968 >> loading configuration file /root/autodl-tmp/models/Qwen2.5-1.5B-Instruct/generation_config.json
+[INFO|configuration_utils.py:1027] 2026-06-26 19:30:09,969 >> Generate config GenerationConfig {
+  "bos_token_id": 151643,
+  "do_sample": true,
+  "eos_token_id": [
+    151645,
+    151643
+  ],
+  "pad_token_id": 151643,
+  "repetition_penalty": 1.1,
+  "temperature": 0.7,
+  "top_k": 20,
+  "top_p": 0.8
+}
+
+[INFO|2026-06-26 19:30:09] llamafactory.model.model_utils.attention:144 >> Using torch SDPA for faster training and inference.
+'[Errno 101] Network is unreachable' thrown while requesting HEAD https://huggingface.co/saves/jerry_money_agent_lora_v2/resolve/main/adapter_config.json
+Retrying in 1s [Retry 1/5].
+Traceback (most recent call last):
+  File "/root/miniconda3/lib/python3.12/site-packages/peft/config.py", line 317, in _get_peft_type
+    config_file = hf_hub_download(
+                  ^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py", line 88, in _inner_fn
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/huggingface_hub/file_download.py", line 1016, in hf_hub_download
+    return _hf_hub_download_to_cache_dir(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/huggingface_hub/file_download.py", line 1149, in _hf_hub_download_to_cache_dir
+    _get_metadata_or_catch_error(
+  File "/root/miniconda3/lib/python3.12/site-packages/huggingface_hub/file_download.py", line 1691, in _get_metadata_or_catch_error
+    metadata = get_hf_file_metadata(
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py", line 88, in _inner_fn
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/huggingface_hub/file_download.py", line 1613, in get_hf_file_metadata
+    response = _httpx_follow_relative_redirects_with_backoff(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/huggingface_hub/utils/_http.py", line 700, in _httpx_follow_relative_redirects_with_backoff
+    response = http_backoff(
+               ^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/huggingface_hub/utils/_http.py", line 574, in http_backoff
+    return next(
+           ^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/huggingface_hub/utils/_http.py", line 482, in _http_backoff_base
+    response = client.request(method=method, url=url, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/httpx/_client.py", line 825, in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/httpx/_client.py", line 901, in send
+    raise RuntimeError("Cannot send a request, as the client has been closed.")
+RuntimeError: Cannot send a request, as the client has been closed.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/root/miniconda3/bin/llamafactory-cli", line 8, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/root/autodl-tmp/LLaMA-Factory/src/llamafactory/cli.py", line 24, in main
+    launcher.launch()
+  File "/root/autodl-tmp/LLaMA-Factory/src/llamafactory/launcher.py", line 144, in launch
+    run_chat()
+  File "/root/autodl-tmp/LLaMA-Factory/src/llamafactory/chat/chat_model.py", line 170, in run_chat
+    chat_model = ChatModel()
+                 ^^^^^^^^^^^
+  File "/root/autodl-tmp/LLaMA-Factory/src/llamafactory/chat/chat_model.py", line 53, in __init__
+    self.engine: BaseEngine = HuggingfaceEngine(model_args, data_args, finetuning_args, generating_args)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/LLaMA-Factory/src/llamafactory/chat/hf_engine.py", line 59, in __init__
+    self.model = load_model(
+                 ^^^^^^^^^^^
+  File "/root/autodl-tmp/LLaMA-Factory/src/llamafactory/model/loader.py", line 181, in load_model
+    model = init_adapter(config, model, model_args, finetuning_args, is_trainable)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/LLaMA-Factory/src/llamafactory/model/adapter.py", line 338, in init_adapter
+    model = _setup_lora_tuning(
+            ^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/LLaMA-Factory/src/llamafactory/model/adapter.py", line 190, in _setup_lora_tuning
+    model: LoraModel = PeftModel.from_pretrained(model, adapter, **init_kwargs)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/peft/peft_model.py", line 459, in from_pretrained
+    config = PEFT_TYPE_TO_CONFIG_MAPPING[PeftConfig._get_peft_type(model_id, **hf_kwargs)].from_pretrained(
+                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/peft/config.py", line 323, in _get_peft_type
+    raise ValueError(f"Can't find '{CONFIG_NAME}' at '{model_id}'")
+ValueError: Can't find 'adapter_config.json' at 'saves/jerry_money_agent_lora_v2'
+root@autodl-container-ns8s3gzv4w-d5cb5fbf:~/autodl-tmp/LLaMA-Factory# llamafactory-cli train examples/train_lora/jerry_money_agent_lora_v2.yaml
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+[INFO|2026-06-26 19:46:01] llamafactory.hparams.parser:523 >> Process rank: 0, world size: 1, device: cuda:0, distributed training: False, compute dtype: torch.bfloat16
+[INFO|configuration_utils.py:769] 2026-06-26 19:46:01,308 >> loading configuration file /root/autodl-tmp/models/Qwen2.5-1.5B-Instruct/config.json
+[INFO|configuration_utils.py:847] 2026-06-26 19:46:01,313 >> Model config Qwen2Config {
+  "architectures": [
+    "Qwen2ForCausalLM"
+  ],
+  "attention_dropout": 0.0,
+  "bos_token_id": 151643,
+  "dtype": "bfloat16",
+  "eos_token_id": 151645,
+  "hidden_act": "silu",
+  "hidden_size": 1536,
+  "initializer_range": 0.02,
+  "intermediate_size": 8960,
+  "layer_types": [
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention"
+  ],
+  "max_position_embeddings": 32768,
+  "max_window_layers": 21,
+  "model_type": "qwen2",
+  "num_attention_heads": 12,
+  "num_hidden_layers": 28,
+  "num_key_value_heads": 2,
+  "pad_token_id": null,
+  "rms_norm_eps": 1e-06,
+  "rope_parameters": {
+    "rope_theta": 1000000.0,
+    "rope_type": "default"
+  },
+  "sliding_window": null,
+  "tie_word_embeddings": true,
+  "transformers_version": "5.6.0",
+  "use_cache": true,
+  "use_sliding_window": false,
+  "vocab_size": 151936
+}
+
+[INFO|configuration_utils.py:769] 2026-06-26 19:46:01,722 >> loading configuration file /root/autodl-tmp/models/Qwen2.5-1.5B-Instruct/config.json
+[INFO|configuration_utils.py:847] 2026-06-26 19:46:01,724 >> Model config Qwen2Config {
+  "architectures": [
+    "Qwen2ForCausalLM"
+  ],
+  "attention_dropout": 0.0,
+  "bos_token_id": 151643,
+  "dtype": "bfloat16",
+  "eos_token_id": 151645,
+  "hidden_act": "silu",
+  "hidden_size": 1536,
+  "initializer_range": 0.02,
+  "intermediate_size": 8960,
+  "layer_types": [
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention"
+  ],
+  "max_position_embeddings": 32768,
+  "max_window_layers": 21,
+  "model_type": "qwen2",
+  "num_attention_heads": 12,
+  "num_hidden_layers": 28,
+  "num_key_value_heads": 2,
+  "pad_token_id": null,
+  "rms_norm_eps": 1e-06,
+  "rope_parameters": {
+    "rope_theta": 1000000.0,
+    "rope_type": "default"
+  },
+  "sliding_window": null,
+  "tie_word_embeddings": true,
+  "transformers_version": "5.6.0",
+  "use_cache": true,
+  "use_sliding_window": false,
+  "vocab_size": 151936
+}
+
+[INFO|configuration_utils.py:769] 2026-06-26 19:46:01,724 >> loading configuration file /root/autodl-tmp/models/Qwen2.5-1.5B-Instruct/config.json
+[INFO|configuration_utils.py:847] 2026-06-26 19:46:01,726 >> Model config Qwen2Config {
+  "architectures": [
+    "Qwen2ForCausalLM"
+  ],
+  "attention_dropout": 0.0,
+  "bos_token_id": 151643,
+  "dtype": "bfloat16",
+  "eos_token_id": 151645,
+  "hidden_act": "silu",
+  "hidden_size": 1536,
+  "initializer_range": 0.02,
+  "intermediate_size": 8960,
+  "layer_types": [
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention"
+  ],
+  "max_position_embeddings": 32768,
+  "max_window_layers": 21,
+  "model_type": "qwen2",
+  "num_attention_heads": 12,
+  "num_hidden_layers": 28,
+  "num_key_value_heads": 2,
+  "pad_token_id": null,
+  "rms_norm_eps": 1e-06,
+  "rope_parameters": {
+    "rope_theta": 1000000.0,
+    "rope_type": "default"
+  },
+  "sliding_window": null,
+  "tie_word_embeddings": true,
+  "transformers_version": "5.6.0",
+  "use_cache": true,
+  "use_sliding_window": false,
+  "vocab_size": 151936
+}
+
+[INFO|2026-06-26 19:46:02] llamafactory.data.loader:144 >> Loading dataset jerry_money_agent_train.json...
+Converting format of dataset (num_proc=4): 310 examples [00:00, 461.84 examples/s]                                                                                                   
+Running tokenizer on dataset (num_proc=4): 310 examples [00:07, 21.96 examples/s]                                                                                                    
+training example:
+input_ids:
+[151644, 8948, 198, 2610, 525, 1207, 16948, 11, 3465, 553, 54364, 14817, 13, 1446, 525, 264, 10950, 17847, 13, 151645, 198, 151644, 872, 198, 26610, 7646, 20713, 73478, 26610, 26610, 33015, 7385, 30, 1203, 30, 6045, 57787, 26610, 7646, 4718, 26610, 7646, 56431, 51317, 3349, 84437, 30, 50704, 2891, 30, 50704, 7793, 1241, 30, 13499, 38367, 1389, 30, 1631, 38367, 1389, 30, 9686, 30456, 30, 6045, 937, 33015, 845, 30, 1203, 937, 33015, 845, 5267, 26610, 33015, 23, 24, 24, 26610, 7646, 151645, 198, 151644, 77091, 198, 4913, 56431, 3252, 6555, 84437, 2198, 1203, 3252, 33015, 2198, 6045, 788, 23, 24, 24, 1335, 1311, 3252, 48545, 63203, 9207, 151645, 198]
+inputs:
+<|im_start|>system
+You are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>
+<|im_start|>user
+?????? Agent ???????????????? intent?item?amount?action?????? JSON??????intent ??? price_audit?ledger_add?ledger_refund?undo_ledger?query_ledger?chat_other?amount ???? null?item ???? null?
+???????899??????<|im_end|>
+<|im_start|>assistant
+{"intent":"price_audit","item":"???","amount":899,"action":"audit_purchase"}<|im_end|>
+
+label_ids:
+[-100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, 4913, 56431, 3252, 6555, 84437, 2198, 1203, 3252, 33015, 2198, 6045, 788, 23, 24, 24, 1335, 1311, 3252, 48545, 63203, 9207, 151645, 198]
+labels:
+{"intent":"price_audit","item":"???","amount":899,"action":"audit_purchase"}<|im_end|>
+
+[INFO|configuration_utils.py:769] 2026-06-26 19:46:11,885 >> loading configuration file /root/autodl-tmp/models/Qwen2.5-1.5B-Instruct/config.json
+[INFO|configuration_utils.py:847] 2026-06-26 19:46:11,888 >> Model config Qwen2Config {
+  "architectures": [
+    "Qwen2ForCausalLM"
+  ],
+  "attention_dropout": 0.0,
+  "bos_token_id": 151643,
+  "dtype": "bfloat16",
+  "eos_token_id": 151645,
+  "hidden_act": "silu",
+  "hidden_size": 1536,
+  "initializer_range": 0.02,
+  "intermediate_size": 8960,
+  "layer_types": [
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention"
+  ],
+  "max_position_embeddings": 32768,
+  "max_window_layers": 21,
+  "model_type": "qwen2",
+  "num_attention_heads": 12,
+  "num_hidden_layers": 28,
+  "num_key_value_heads": 2,
+  "pad_token_id": null,
+  "rms_norm_eps": 1e-06,
+  "rope_parameters": {
+    "rope_theta": 1000000.0,
+    "rope_type": "default"
+  },
+  "sliding_window": null,
+  "tie_word_embeddings": true,
+  "transformers_version": "5.6.0",
+  "use_cache": true,
+  "use_sliding_window": false,
+  "vocab_size": 151936
+}
+
+[INFO|2026-06-26 19:46:11] llamafactory.model.model_utils.kv_cache:144 >> KV cache is disabled during training.
+[INFO|modeling_utils.py:748] 2026-06-26 19:46:12,636 >> loading weights file /root/autodl-tmp/models/Qwen2.5-1.5B-Instruct/model.safetensors
+[INFO|modeling_utils.py:821] 2026-06-26 19:46:12,636 >> Will use dtype=torch.bfloat16 as defined in model's config object
+[INFO|configuration_utils.py:1027] 2026-06-26 19:46:12,637 >> Generate config GenerationConfig {
+  "bos_token_id": 151643,
+  "eos_token_id": 151645,
+  "output_attentions": false,
+  "output_hidden_states": false,
+  "use_cache": false
+}
+
+Loading weights: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 338/338 [00:00<00:00, 380.48it/s]
+[INFO|configuration_utils.py:978] 2026-06-26 19:46:13,753 >> loading configuration file /root/autodl-tmp/models/Qwen2.5-1.5B-Instruct/generation_config.json
+[INFO|configuration_utils.py:1027] 2026-06-26 19:46:13,754 >> Generate config GenerationConfig {
+  "bos_token_id": 151643,
+  "do_sample": true,
+  "eos_token_id": [
+    151645,
+    151643
+  ],
+  "pad_token_id": 151643,
+  "repetition_penalty": 1.1,
+  "temperature": 0.7,
+  "top_k": 20,
+  "top_p": 0.8
+}
+
+[INFO|2026-06-26 19:46:13] llamafactory.model.model_utils.checkpointing:144 >> Gradient checkpointing enabled.
+[INFO|2026-06-26 19:46:13] llamafactory.model.model_utils.attention:144 >> Using torch SDPA for faster training and inference.
+[INFO|2026-06-26 19:46:13] llamafactory.model.adapter:144 >> Upcasting trainable params to float32.
+[INFO|2026-06-26 19:46:13] llamafactory.model.adapter:144 >> Fine-tuning method: LoRA
+[INFO|2026-06-26 19:46:13] llamafactory.model.model_utils.misc:144 >> Found linear modules: gate_proj,v_proj,k_proj,down_proj,o_proj,up_proj,q_proj
+[INFO|2026-06-26 19:46:14] llamafactory.model.loader:144 >> trainable params: 9,232,384 || all params: 1,552,946,688 || trainable%: 0.5945
+[WARNING|2026-06-26 19:46:14] llamafactory.train.callbacks:155 >> Previous trainer log in this folder will be deleted.
+[WARNING|trainer_utils.py:1238] 2026-06-26 19:46:14,068 >> The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'bos_token_id': None, 'pad_token_id': 151643}.
+[INFO|trainer.py:1469] 2026-06-26 19:46:14,337 >> ***** Running training *****
+[INFO|trainer.py:1470] 2026-06-26 19:46:14,337 >>   Num examples = 155
+[INFO|trainer.py:1471] 2026-06-26 19:46:14,337 >>   Num Epochs = 3
+[INFO|trainer.py:1472] 2026-06-26 19:46:14,337 >>   Num update steps per epoch = 39
+[INFO|trainer.py:1473] 2026-06-26 19:46:14,337 >>   Instantaneous batch size per device = 1
+[INFO|trainer.py:1476] 2026-06-26 19:46:14,337 >>   Total train batch size (w. parallel, distributed & accumulation) = 4
+[INFO|trainer.py:1477] 2026-06-26 19:46:14,337 >>   Gradient Accumulation steps = 4
+[INFO|trainer.py:1478] 2026-06-26 19:46:14,337 >>   Total optimization steps = 117
+[INFO|trainer.py:1479] 2026-06-26 19:46:14,340 >>   Number of trainable parameters = 9,232,384
+{'loss': '1.572', 'grad_norm': '4.959', 'learning_rate': '3.333e-05', 'epoch': '0.129'}                                                                                              
+{'loss': '1.18', 'grad_norm': '3.923', 'learning_rate': '7.5e-05', 'epoch': '0.2581'}                                                                                                
+{'loss': '0.5883', 'grad_norm': '1.878', 'learning_rate': '9.991e-05', 'epoch': '0.3871'}                                                                                            
+{'loss': '0.2432', 'grad_norm': '2.845', 'learning_rate': '9.891e-05', 'epoch': '0.5161'}                                                                                            
+{'loss': '0.167', 'grad_norm': '2.061', 'learning_rate': '9.681e-05', 'epoch': '0.6452'}                                                                                             
+{'loss': '0.1074', 'grad_norm': '2.048', 'learning_rate': '9.367e-05', 'epoch': '0.7742'}                                                                                            
+{'loss': '0.1311', 'grad_norm': '1.451', 'learning_rate': '8.955e-05', 'epoch': '0.9032'}                                                                                            
+{'loss': '0.08519', 'grad_norm': '0.8868', 'learning_rate': '8.455e-05', 'epoch': '1.026'}                                                                                           
+{'loss': '0.09541', 'grad_norm': '0.2337', 'learning_rate': '7.878e-05', 'epoch': '1.155'}                                                                                           
+{'loss': '0.1129', 'grad_norm': '1.029', 'learning_rate': '7.237e-05', 'epoch': '1.284'}                                                                                             
+ 43%|█████████████████████████████████████████████████████████████                                                                                  | 50/117 [01:02<01:23,  1.24s/it][INFO|trainer.py:3815] 2026-06-26 19:47:16,553 >> Saving model checkpoint to saves/jerry_money_agent_lora_v2/checkpoint-50
+[INFO|configuration_utils.py:769] 2026-06-26 19:47:16,581 >> loading configuration file /root/autodl-tmp/models/Qwen2.5-1.5B-Instruct/config.json
+[INFO|configuration_utils.py:847] 2026-06-26 19:47:16,583 >> Model config Qwen2Config {
+  "architectures": [
+    "Qwen2ForCausalLM"
+  ],
+  "attention_dropout": 0.0,
+  "bos_token_id": 151643,
+  "dtype": "bfloat16",
+  "eos_token_id": 151645,
+  "hidden_act": "silu",
+  "hidden_size": 1536,
+  "initializer_range": 0.02,
+  "intermediate_size": 8960,
+  "layer_types": [
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention"
+  ],
+  "max_position_embeddings": 32768,
+  "max_window_layers": 21,
+  "model_type": "qwen2",
+  "num_attention_heads": 12,
+  "num_hidden_layers": 28,
+  "num_key_value_heads": 2,
+  "pad_token_id": null,
+  "rms_norm_eps": 1e-06,
+  "rope_parameters": {
+    "rope_theta": 1000000.0,
+    "rope_type": "default"
+  },
+  "sliding_window": null,
+  "tie_word_embeddings": true,
+  "transformers_version": "5.6.0",
+  "use_cache": true,
+  "use_sliding_window": false,
+  "vocab_size": 151936
+}
+
+[INFO|tokenization_utils_base.py:3278] 2026-06-26 19:47:16,652 >> chat template saved in saves/jerry_money_agent_lora_v2/checkpoint-50/chat_template.jinja
+[INFO|tokenization_utils_base.py:2111] 2026-06-26 19:47:16,652 >> tokenizer config file saved in saves/jerry_money_agent_lora_v2/checkpoint-50/tokenizer_config.json
+{'loss': '0.1148', 'grad_norm': '1.046', 'learning_rate': '6.545e-05', 'epoch': '1.413'}                                                                                             
+{'loss': '0.0842', 'grad_norm': '0.382', 'learning_rate': '5.819e-05', 'epoch': '1.542'}                                                                                             
+{'loss': '0.08728', 'grad_norm': '1.043', 'learning_rate': '5.075e-05', 'epoch': '1.671'}                                                                                            
+{'loss': '0.1421', 'grad_norm': '0.4316', 'learning_rate': '4.329e-05', 'epoch': '1.8'}                                                                                              
+{'loss': '0.122', 'grad_norm': '0.8919', 'learning_rate': '3.598e-05', 'epoch': '1.929'}                                                                                             
+{'loss': '0.1309', 'grad_norm': '0.3298', 'learning_rate': '2.898e-05', 'epoch': '2.052'}                                                                                            
+{'loss': '0.07896', 'grad_norm': '0.434', 'learning_rate': '2.246e-05', 'epoch': '2.181'}                                                                                            
+{'loss': '0.07685', 'grad_norm': '0.5098', 'learning_rate': '1.654e-05', 'epoch': '2.31'}                                                                                            
+{'loss': '0.08915', 'grad_norm': '0.79', 'learning_rate': '1.138e-05', 'epoch': '2.439'}                                                                                             
+{'loss': '0.1025', 'grad_norm': '0.5228', 'learning_rate': '7.078e-06', 'epoch': '2.568'}                                                                                            
+ 85%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████▎                    | 100/117 [02:04<00:21,  1.25s/it][INFO|trainer.py:3815] 2026-06-26 19:48:19,261 >> Saving model checkpoint to saves/jerry_money_agent_lora_v2/checkpoint-100
+[INFO|configuration_utils.py:769] 2026-06-26 19:48:19,287 >> loading configuration file /root/autodl-tmp/models/Qwen2.5-1.5B-Instruct/config.json
+[INFO|configuration_utils.py:847] 2026-06-26 19:48:19,289 >> Model config Qwen2Config {
+  "architectures": [
+    "Qwen2ForCausalLM"
+  ],
+  "attention_dropout": 0.0,
+  "bos_token_id": 151643,
+  "dtype": "bfloat16",
+  "eos_token_id": 151645,
+  "hidden_act": "silu",
+  "hidden_size": 1536,
+  "initializer_range": 0.02,
+  "intermediate_size": 8960,
+  "layer_types": [
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention"
+  ],
+  "max_position_embeddings": 32768,
+  "max_window_layers": 21,
+  "model_type": "qwen2",
+  "num_attention_heads": 12,
+  "num_hidden_layers": 28,
+  "num_key_value_heads": 2,
+  "pad_token_id": null,
+  "rms_norm_eps": 1e-06,
+  "rope_parameters": {
+    "rope_theta": 1000000.0,
+    "rope_type": "default"
+  },
+  "sliding_window": null,
+  "tie_word_embeddings": true,
+  "transformers_version": "5.6.0",
+  "use_cache": true,
+  "use_sliding_window": false,
+  "vocab_size": 151936
+}
+
+[INFO|tokenization_utils_base.py:3278] 2026-06-26 19:48:19,359 >> chat template saved in saves/jerry_money_agent_lora_v2/checkpoint-100/chat_template.jinja
+[INFO|tokenization_utils_base.py:2111] 2026-06-26 19:48:19,360 >> tokenizer config file saved in saves/jerry_money_agent_lora_v2/checkpoint-100/tokenizer_config.json
+{'loss': '0.07739', 'grad_norm': '0.5412', 'learning_rate': '3.735e-06', 'epoch': '2.697'}                                                                                           
+{'loss': '0.06772', 'grad_norm': '0.3278', 'learning_rate': '1.425e-06', 'epoch': '2.826'}                                                                                           
+{'loss': '0.09095', 'grad_norm': '0.457', 'learning_rate': '2.013e-07', 'epoch': '2.955'}                                                                                            
+100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 117/117 [02:25<00:00,  1.15s/it][INFO|trainer.py:3815] 2026-06-26 19:48:40,196 >> Saving model checkpoint to saves/jerry_money_agent_lora_v2/checkpoint-117
+[INFO|configuration_utils.py:769] 2026-06-26 19:48:40,240 >> loading configuration file /root/autodl-tmp/models/Qwen2.5-1.5B-Instruct/config.json
+[INFO|configuration_utils.py:847] 2026-06-26 19:48:40,243 >> Model config Qwen2Config {
+  "architectures": [
+    "Qwen2ForCausalLM"
+  ],
+  "attention_dropout": 0.0,
+  "bos_token_id": 151643,
+  "dtype": "bfloat16",
+  "eos_token_id": 151645,
+  "hidden_act": "silu",
+  "hidden_size": 1536,
+  "initializer_range": 0.02,
+  "intermediate_size": 8960,
+  "layer_types": [
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention"
+  ],
+  "max_position_embeddings": 32768,
+  "max_window_layers": 21,
+  "model_type": "qwen2",
+  "num_attention_heads": 12,
+  "num_hidden_layers": 28,
+  "num_key_value_heads": 2,
+  "pad_token_id": null,
+  "rms_norm_eps": 1e-06,
+  "rope_parameters": {
+    "rope_theta": 1000000.0,
+    "rope_type": "default"
+  },
+  "sliding_window": null,
+  "tie_word_embeddings": true,
+  "transformers_version": "5.6.0",
+  "use_cache": true,
+  "use_sliding_window": false,
+  "vocab_size": 151936
+}
+
+[INFO|tokenization_utils_base.py:3278] 2026-06-26 19:48:40,323 >> chat template saved in saves/jerry_money_agent_lora_v2/checkpoint-117/chat_template.jinja
+[INFO|tokenization_utils_base.py:2111] 2026-06-26 19:48:40,323 >> tokenizer config file saved in saves/jerry_money_agent_lora_v2/checkpoint-117/tokenizer_config.json
+[INFO|trainer.py:1823] 2026-06-26 19:48:40,560 >> 
+
+Training completed. Do not forget to share your model on huggingface.co/models =)
+
+
+{'train_runtime': '146.2', 'train_samples_per_second': '3.18', 'train_steps_per_second': '0.8', 'train_loss': '0.2385', 'epoch': '3'}                                                
+100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 117/117 [02:26<00:00,  1.25s/it]
+[INFO|trainer.py:3815] 2026-06-26 19:48:40,561 >> Saving model checkpoint to saves/jerry_money_agent_lora_v2
+[INFO|configuration_utils.py:769] 2026-06-26 19:48:40,585 >> loading configuration file /root/autodl-tmp/models/Qwen2.5-1.5B-Instruct/config.json
+[INFO|configuration_utils.py:847] 2026-06-26 19:48:40,587 >> Model config Qwen2Config {
+  "architectures": [
+    "Qwen2ForCausalLM"
+  ],
+  "attention_dropout": 0.0,
+  "bos_token_id": 151643,
+  "dtype": "bfloat16",
+  "eos_token_id": 151645,
+  "hidden_act": "silu",
+  "hidden_size": 1536,
+  "initializer_range": 0.02,
+  "intermediate_size": 8960,
+  "layer_types": [
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention"
+  ],
+  "max_position_embeddings": 32768,
+  "max_window_layers": 21,
+  "model_type": "qwen2",
+  "num_attention_heads": 12,
+  "num_hidden_layers": 28,
+  "num_key_value_heads": 2,
+  "pad_token_id": null,
+  "rms_norm_eps": 1e-06,
+  "rope_parameters": {
+    "rope_theta": 1000000.0,
+    "rope_type": "default"
+  },
+  "sliding_window": null,
+  "tie_word_embeddings": true,
+  "transformers_version": "5.6.0",
+  "use_cache": true,
+  "use_sliding_window": false,
+  "vocab_size": 151936
+}
+
+[INFO|tokenization_utils_base.py:3278] 2026-06-26 19:48:40,633 >> chat template saved in saves/jerry_money_agent_lora_v2/chat_template.jinja
+[INFO|tokenization_utils_base.py:2111] 2026-06-26 19:48:40,634 >> tokenizer config file saved in saves/jerry_money_agent_lora_v2/tokenizer_config.json
+***** train metrics *****
+  epoch                    =        3.0
+  total_flos               =   384021GF
+  train_loss               =     0.2385
+  train_runtime            = 0:02:26.21
+  train_samples_per_second =       3.18
+  train_steps_per_second   =        0.8
+Figure saved at: saves/jerry_money_agent_lora_v2/training_loss.png
+[WARNING|2026-06-26 19:48:40] llamafactory.extras.ploting:149 >> No metric eval_loss to plot.
+[WARNING|2026-06-26 19:48:40] llamafactory.extras.ploting:149 >> No metric eval_accuracy to plot.
+[INFO|modelcard.py:263] 2026-06-26 19:48:40,844 >> Dropping the following result as it does not have all the necessary fields:
+{'task': {'name': 'Causal Language Modeling', 'type': 'text-generation'}}
+root@autodl-container-ns8s3gzv4w-d5cb5fbf:~/autodl-tmp/LLaMA-Factory# ls saves/jerry_money_agent_lora_v2/adapter_config.json
+saves/jerry_money_agent_lora_v2/adapter_config.json
+root@autodl-container-ns8s3gzv4w-d5cb5fbf:~/autodl-tmp/LLaMA-Factory# llamafactory-cli chat examples/inference/jerry_money_agent_lora_v2_infer.yaml
+[INFO|configuration_utils.py:769] 2026-06-26 19:50:34,766 >> loading configuration file /root/autodl-tmp/models/Qwen2.5-1.5B-Instruct/config.json
+[INFO|configuration_utils.py:847] 2026-06-26 19:50:34,771 >> Model config Qwen2Config {
+  "architectures": [
+    "Qwen2ForCausalLM"
+  ],
+  "attention_dropout": 0.0,
+  "bos_token_id": 151643,
+  "dtype": "bfloat16",
+  "eos_token_id": 151645,
+  "hidden_act": "silu",
+  "hidden_size": 1536,
+  "initializer_range": 0.02,
+  "intermediate_size": 8960,
+  "layer_types": [
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention"
+  ],
+  "max_position_embeddings": 32768,
+  "max_window_layers": 21,
+  "model_type": "qwen2",
+  "num_attention_heads": 12,
+  "num_hidden_layers": 28,
+  "num_key_value_heads": 2,
+  "pad_token_id": null,
+  "rms_norm_eps": 1e-06,
+  "rope_parameters": {
+    "rope_theta": 1000000.0,
+    "rope_type": "default"
+  },
+  "sliding_window": null,
+  "tie_word_embeddings": true,
+  "transformers_version": "5.6.0",
+  "use_cache": true,
+  "use_sliding_window": false,
+  "vocab_size": 151936
+}
+
+[INFO|configuration_utils.py:769] 2026-06-26 19:50:35,217 >> loading configuration file /root/autodl-tmp/models/Qwen2.5-1.5B-Instruct/config.json
+[INFO|configuration_utils.py:847] 2026-06-26 19:50:35,219 >> Model config Qwen2Config {
+  "architectures": [
+    "Qwen2ForCausalLM"
+  ],
+  "attention_dropout": 0.0,
+  "bos_token_id": 151643,
+  "dtype": "bfloat16",
+  "eos_token_id": 151645,
+  "hidden_act": "silu",
+  "hidden_size": 1536,
+  "initializer_range": 0.02,
+  "intermediate_size": 8960,
+  "layer_types": [
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention"
+  ],
+  "max_position_embeddings": 32768,
+  "max_window_layers": 21,
+  "model_type": "qwen2",
+  "num_attention_heads": 12,
+  "num_hidden_layers": 28,
+  "num_key_value_heads": 2,
+  "pad_token_id": null,
+  "rms_norm_eps": 1e-06,
+  "rope_parameters": {
+    "rope_theta": 1000000.0,
+    "rope_type": "default"
+  },
+  "sliding_window": null,
+  "tie_word_embeddings": true,
+  "transformers_version": "5.6.0",
+  "use_cache": true,
+  "use_sliding_window": false,
+  "vocab_size": 151936
+}
+
+[INFO|configuration_utils.py:769] 2026-06-26 19:50:35,219 >> loading configuration file /root/autodl-tmp/models/Qwen2.5-1.5B-Instruct/config.json
+[INFO|configuration_utils.py:847] 2026-06-26 19:50:35,220 >> Model config Qwen2Config {
+  "architectures": [
+    "Qwen2ForCausalLM"
+  ],
+  "attention_dropout": 0.0,
+  "bos_token_id": 151643,
+  "dtype": "bfloat16",
+  "eos_token_id": 151645,
+  "hidden_act": "silu",
+  "hidden_size": 1536,
+  "initializer_range": 0.02,
+  "intermediate_size": 8960,
+  "layer_types": [
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention"
+  ],
+  "max_position_embeddings": 32768,
+  "max_window_layers": 21,
+  "model_type": "qwen2",
+  "num_attention_heads": 12,
+  "num_hidden_layers": 28,
+  "num_key_value_heads": 2,
+  "pad_token_id": null,
+  "rms_norm_eps": 1e-06,
+  "rope_parameters": {
+    "rope_theta": 1000000.0,
+    "rope_type": "default"
+  },
+  "sliding_window": null,
+  "tie_word_embeddings": true,
+  "transformers_version": "5.6.0",
+  "use_cache": true,
+  "use_sliding_window": false,
+  "vocab_size": 151936
+}
+
+[INFO|configuration_utils.py:769] 2026-06-26 19:50:35,704 >> loading configuration file /root/autodl-tmp/models/Qwen2.5-1.5B-Instruct/config.json
+[INFO|configuration_utils.py:847] 2026-06-26 19:50:35,705 >> Model config Qwen2Config {
+  "architectures": [
+    "Qwen2ForCausalLM"
+  ],
+  "attention_dropout": 0.0,
+  "bos_token_id": 151643,
+  "dtype": "bfloat16",
+  "eos_token_id": 151645,
+  "hidden_act": "silu",
+  "hidden_size": 1536,
+  "initializer_range": 0.02,
+  "intermediate_size": 8960,
+  "layer_types": [
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention"
+  ],
+  "max_position_embeddings": 32768,
+  "max_window_layers": 21,
+  "model_type": "qwen2",
+  "num_attention_heads": 12,
+  "num_hidden_layers": 28,
+  "num_key_value_heads": 2,
+  "pad_token_id": null,
+  "rms_norm_eps": 1e-06,
+  "rope_parameters": {
+    "rope_theta": 1000000.0,
+    "rope_type": "default"
+  },
+  "sliding_window": null,
+  "tie_word_embeddings": true,
+  "transformers_version": "5.6.0",
+  "use_cache": true,
+  "use_sliding_window": false,
+  "vocab_size": 151936
+}
+
+[WARNING|logging.py:340] 2026-06-26 19:50:35,705 >> `torch_dtype` is deprecated! Use `dtype` instead!
+[INFO|2026-06-26 19:50:35] llamafactory.model.model_utils.kv_cache:144 >> KV cache is enabled for faster generation.
+[INFO|modeling_utils.py:748] 2026-06-26 19:50:36,237 >> loading weights file /root/autodl-tmp/models/Qwen2.5-1.5B-Instruct/model.safetensors
+[INFO|modeling_utils.py:821] 2026-06-26 19:50:36,237 >> Will use dtype=torch.bfloat16 as defined in model's config object
+[INFO|configuration_utils.py:1027] 2026-06-26 19:50:36,238 >> Generate config GenerationConfig {
+  "bos_token_id": 151643,
+  "eos_token_id": 151645,
+  "output_attentions": false,
+  "output_hidden_states": false,
+  "use_cache": true
+}
+
+[INFO|accelerate.py:285] 2026-06-26 19:50:36,438 >> We will use 90% of the memory on device 0 for storing the model, and 10% for the buffer to avoid OOM. You can set `max_memory` in to a higher value to use more memory (at your own risk).
+Loading weights: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 338/338 [00:01<00:00, 321.90it/s]
+[INFO|configuration_utils.py:978] 2026-06-26 19:50:37,666 >> loading configuration file /root/autodl-tmp/models/Qwen2.5-1.5B-Instruct/generation_config.json
+[INFO|configuration_utils.py:1027] 2026-06-26 19:50:37,666 >> Generate config GenerationConfig {
+  "bos_token_id": 151643,
+  "do_sample": true,
+  "eos_token_id": [
+    151645,
+    151643
+  ],
+  "pad_token_id": 151643,
+  "repetition_penalty": 1.1,
+  "temperature": 0.7,
+  "top_k": 20,
+  "top_p": 0.8
+}
+
+[INFO|2026-06-26 19:50:37] llamafactory.model.model_utils.attention:144 >> Using torch SDPA for faster training and inference.
+[INFO|2026-06-26 19:50:38] llamafactory.model.adapter:144 >> Merged 1 adapter(s).
+[INFO|2026-06-26 19:50:38] llamafactory.model.adapter:144 >> Loaded adapter(s): saves/jerry_money_agent_lora_v2
+[INFO|2026-06-26 19:50:38] llamafactory.model.loader:144 >> all params: 1,543,714,304
+Welcome to the CLI application, use `clear` to remove the history, use `exit` to exit the application.
+
+User: 你是省钱智探 Agent 的输入解析器。请从用户输入中抽取 intent、item、amount、action。只输出严格 JSON，不要解释。
+Assistant: {"intent": "", 
+"item": "", "amount": "", "action": ""}
+
+User: 用户：我想买个99元机械键盘，帮我看看值不值
+Assistant: {"intent":"购买","item":"机械键盘","amount":99,"action":"购买"}
+
+User: 你是省钱智探 Agent 的输入解析器。请从用户输入中抽取 intent、item、amount、action。只输出严格 JSON，不要解释。
+Assistant: {"intent":"购买","item":"键盘","amount":99,"action":"购买"}
+
+User: 用户：今天午饭花了28元，帮我记账
+Assistant: {"intent":"记账","item":"午饭","amount":28,"action":"记账"}
+
+User: Traceback (most recent call last):
+  File "/root/miniconda3/bin/llamafactory-cli", line 8, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/root/autodl-tmp/LLaMA-Factory/src/llamafactory/cli.py", line 24, in main
+    launcher.launch()
+  File "/root/autodl-tmp/LLaMA-Factory/src/llamafactory/launcher.py", line 144, in launch
+    run_chat()
+  File "/root/autodl-tmp/LLaMA-Factory/src/llamafactory/chat/chat_model.py", line 176, in run_chat
+    query = input("\nUser: ")
+            ^^^^^^^^^^^^^^^^^
+KeyboardInterrupt
