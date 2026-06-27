@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import re
 import time
@@ -85,12 +85,12 @@ def _plan_questions(product: str) -> list[ResearchQuestion]:
         ResearchQuestion(
             f"{product} 当前公开价格和可买渠道是什么？",
             "Price Researcher",
-            "复用旧省钱智探的 Tavily 搜索和价格渠道面板，先拿外部证据。",
+            "调用省钱智探核心搜索和价格渠道面板，先拿外部证据。",
         ),
         ResearchQuestion(
             f"{product} 有哪些差评、缺点、售后或低价风险？",
             "Risk Researcher",
-            "复用省钱智探的避坑判断，不只看价格便宜。",
+            "调用省钱智探的避坑判断，不只看价格便宜。",
         ),
         ResearchQuestion(
             f"有没有同预算替代品或更值得等的购买时机？",
@@ -100,7 +100,7 @@ def _plan_questions(product: str) -> list[ResearchQuestion]:
         ResearchQuestion(
             "结合 Jerry 的余额、账本、历史记忆，这次消费是否合理？",
             "Personal Context Agent",
-            "保留旧项目的账本、记忆召回、购买确认和放弃购买闭环。",
+            "接入账本、记忆召回、购买确认和放弃购买闭环。",
         ),
     ]
 
@@ -322,7 +322,7 @@ def _decision(query: str, product: str, price: float, legacy_answer: str, eviden
 
     if budget and price and price > budget:
         verdict = "暂缓"
-        reason = f"旧省钱智探估算价格约 {price} 元，超过你输入的预算 {budget} 元。"
+        reason = f"省钱智探核心审计估算价格约 {price} 元，超过你输入的预算 {budget} 元。"
     elif any(word in answer for word in ["建议避坑", "持币观望", "观望", "不建议"]):
         verdict = "先观察"
         reason = "省钱智探给出了避坑或观望倾向，建议先核实来源和替代品。"
@@ -407,7 +407,7 @@ Run: {run_id}
 ## Multi-Agent Orchestration
 {a_lines}
 
-## 旧省钱智探复用结果
+## 省钱智探核心审计结果
 - 估算价格：{legacy['estimated_price']} 元
 - Tavily 搜索来源：{len(legacy['search_sources'])} 条
 - 价格渠道来源：{len(legacy['price_table'])} 条
@@ -430,7 +430,7 @@ Run: {run_id}
 - 原因：{decision['reason']}
 - 下一步：{decision['next_action']}
 
-## 省钱智探原始判断
+## 省钱智探核心判断
 {legacy['display_answer']}
 """
 
@@ -465,7 +465,7 @@ def run_deal_research(query: str) -> dict[str, Any]:
     steps.append(
         ResearchStep(
             "legacy_zhitan_pipeline",
-            "复用旧省钱智探：Tavily 搜索、平台价格来源、搜索补充来源、记忆召回、LLM 决策和价格解析。",
+            "运行省钱智探核心审计链路：Tavily 搜索、平台价格来源、搜索补充来源、记忆召回、LLM 决策和价格解析。",
             int((time.perf_counter() - stage) * 1000),
         )
     )
@@ -479,7 +479,7 @@ def run_deal_research(query: str) -> dict[str, Any]:
 
     stage = time.perf_counter()
     report = _report(run_id, query, product, questions, evidence, context, decision, legacy, agent_runs)
-    steps.append(ResearchStep("publisher", "生成可展示的购买研究报告，并保留省钱智探原始判断。", int((time.perf_counter() - stage) * 1000)))
+    steps.append(ResearchStep("publisher", "生成可展示的购买研究报告，并保留省钱智探核心判断。", int((time.perf_counter() - stage) * 1000)))
 
     run = DealResearchRun(
         run_id=run_id,

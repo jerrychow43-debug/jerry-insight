@@ -133,9 +133,9 @@ def _render_top_query(run_deal_research) -> None:
             """
             <div class="pro-hero">
               <div class="pro-eyebrow">Data Agent + Search Agent + MCP-style 工具编排</div>
-              <div class="pro-title">把旧省钱智探升级成消费决策工程应用</div>
+              <div class="pro-title">把省钱智探升级成消费决策工程应用</div>
               <div class="pro-muted">
-                复用原 Streamlit 版的搜索、价格来源、账本、记忆和确认购买闭环，
+                整合搜索、价格来源、账本、记忆和确认购买闭环，
                 把一次聊天式回答整理成证据、决策、链路和可执行动作。
               </div>
             </div>
@@ -157,7 +157,7 @@ def _render_top_query(run_deal_research) -> None:
 
     if submitted and query.strip():
         st.session_state["PRO_QUERY"] = query.strip()
-        with st.spinner("正在复用旧版省钱智探链路，并整理成工程化报告..."):
+        with st.spinner("正在运行省钱智探核心审计链路，并整理成工程化报告..."):
             try:
                 st.session_state["PRO_DEAL_RUN"] = run_deal_research(query.strip())
                 st.session_state["ACTION_COMPLETED"] = False
@@ -315,8 +315,8 @@ def render_streamlit_pro_workbench(callback_confirm, callback_cancel, get_dynami
         _render_sources_and_history(run, list_ledger, list_blocked_items, list_history)
 
         legacy = run.get("legacy_audit", {}) or {}
-        with st.expander("省钱智探原始判断", expanded=False):
-            st.markdown(legacy.get("display_answer") or "暂无原始判断。")
+        with st.expander("省钱智探核心判断", expanded=False):
+            st.markdown(legacy.get("display_answer") or "暂无核心判断。")
         with st.expander("完整 Markdown 报告", expanded=False):
             st.markdown(run.get("report") or "")
 
