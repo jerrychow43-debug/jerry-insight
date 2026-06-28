@@ -34,9 +34,23 @@ def _safe_len(value: Any) -> int:
     return len(value) if isinstance(value, list) else 0
 
 
+def _count_or_status(value: Any, empty_label: str = "未返回") -> str:
+    count = _safe_len(value)
+    return f"{count} 条" if count else empty_label
+
+
 def _build_source_rows(run: dict[str, Any]) -> list[dict[str, Any]]:
     legacy = run.get("legacy_audit", {}) or {}
     rows: list[dict[str, Any]] = []
+    estimated_price = legacy.get("estimated_price")
+    if estimated_price:
+        rows.append({
+            "类型": "核心审计估算",
+            "价格": _money(estimated_price),
+            "说明": "通过旧版省钱智探审计通道给出的估算；它结合商品、预算、账本上下文和模型常识生成，展示时建议继续核实实时价格。",
+            "域名/平台": "旧版审计通道",
+            "链接": "",
+        })
     for item in legacy.get("price_table", []) or []:
         rows.append({
             "类型": "平台价格来源",
@@ -133,9 +147,9 @@ def _render_top_query(run_deal_research) -> None:
             """
             <div class="pro-hero">
               <div class="pro-eyebrow">Data Agent + Search Agent + MCP-style 工具编排</div>
-              <div class="pro-title">把省钱智探升级成消费决策工程应用</div>
+              <div class="pro-title">新界面展示旧版省钱智探审计通道</div>
               <div class="pro-muted">
-                整合搜索、价格来源、账本、记忆和确认购买闭环，
+                通过旧版 Streamlit 审计通道运行搜索、价格来源、账本、记忆和确认购买闭环，
                 把一次聊天式回答整理成证据、决策、链路和可执行动作。
               </div>
             </div>
@@ -157,7 +171,7 @@ def _render_top_query(run_deal_research) -> None:
 
     if submitted and query.strip():
         st.session_state["PRO_QUERY"] = query.strip()
-        with st.spinner("正在运行省钱智探核心审计链路，并整理成工程化报告..."):
+        with st.spinner("正在通过旧版省钱智探审计通道运行，并整理成新界面报告..."):
             try:
                 st.session_state["PRO_DEAL_RUN"] = run_deal_research(query.strip())
                 st.session_state["ACTION_COMPLETED"] = False
@@ -199,10 +213,10 @@ def _render_decision_summary(run: dict[str, Any], profile: dict[str, Any], callb
 
     with col_metrics:
         m1, m2 = st.columns(2)
-        m1.markdown(f'<div class="metric-card"><small>Tavily 来源</small><strong>{_safe_len(legacy.get("search_sources"))} 条</strong></div>', unsafe_allow_html=True)
-        m2.markdown(f'<div class="metric-card"><small>平台价格来源</small><strong>{_safe_len(legacy.get("price_table"))} 条</strong></div>', unsafe_allow_html=True)
+        m1.markdown(f'<div class="metric-card"><small>Tavily 来源</small><strong>{_count_or_status(legacy.get("search_sources"))}</strong></div>', unsafe_allow_html=True)
+        m2.markdown(f'<div class="metric-card"><small>平台价格来源</small><strong>{_count_or_status(legacy.get("price_table"))}</strong></div>', unsafe_allow_html=True)
         m3, m4 = st.columns(2)
-        m3.markdown(f'<div class="metric-card"><small>搜索补充来源</small><strong>{_safe_len(legacy.get("crawler_sources"))} 条</strong></div>', unsafe_allow_html=True)
+        m3.markdown(f'<div class="metric-card"><small>搜索补充来源</small><strong>{_count_or_status(legacy.get("crawler_sources"), "未启用")}</strong></div>', unsafe_allow_html=True)
         m4.markdown(f'<div class="metric-card"><small>当前余额</small><strong>{_money(context.get("current_surplus", profile.get("current_surplus")))}</strong></div>', unsafe_allow_html=True)
 
 
@@ -310,6 +324,9 @@ def render_streamlit_pro_workbench(callback_confirm, callback_cancel, get_dynami
             return
 
         _render_decision_summary(run, profile, callback_confirm, callback_cancel)
+        legacy = run.get("legacy_audit", {}) or {}
+        if not legacy.get("search_sources") and not legacy.get("price_table"):
+            st.warning("外部搜索证据本次未返回可展示来源；当前结论来自省钱智探核心审计估算，建议展示时说明这是 fallback 结果。")
         _render_planner_and_agents(run)
         _render_evidence(run)
         _render_sources_and_history(run, list_ledger, list_blocked_items, list_history)

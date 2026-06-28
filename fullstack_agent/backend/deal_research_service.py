@@ -322,7 +322,7 @@ def _decision(query: str, product: str, price: float, legacy_answer: str, eviden
 
     if budget and price and price > budget:
         verdict = "暂缓"
-        reason = f"省钱智探核心审计估算价格约 {price} 元，超过你输入的预算 {budget} 元。"
+        reason = f"旧版省钱智探审计通道估算价格约 {price} 元，超过你输入的预算 {budget} 元。"
     elif any(word in answer for word in ["建议避坑", "持币观望", "观望", "不建议"]):
         verdict = "先观察"
         reason = "省钱智探给出了避坑或观望倾向，建议先核实来源和替代品。"
@@ -407,7 +407,7 @@ Run: {run_id}
 ## Multi-Agent Orchestration
 {a_lines}
 
-## 省钱智探核心审计结果
+## 旧版省钱智探审计通道结果
 - 估算价格：{legacy['estimated_price']} 元
 - Tavily 搜索来源：{len(legacy['search_sources'])} 条
 - 价格渠道来源：{len(legacy['price_table'])} 条
@@ -430,7 +430,7 @@ Run: {run_id}
 - 原因：{decision['reason']}
 - 下一步：{decision['next_action']}
 
-## 省钱智探核心判断
+## 旧版省钱智探通道判断
 {legacy['display_answer']}
 """
 
@@ -465,7 +465,7 @@ def run_deal_research(query: str) -> dict[str, Any]:
     steps.append(
         ResearchStep(
             "legacy_zhitan_pipeline",
-            "运行省钱智探核心审计链路：Tavily 搜索、平台价格来源、搜索补充来源、记忆召回、LLM 决策和价格解析。",
+            "通过旧版省钱智探审计通道运行：Tavily 搜索、平台价格来源、搜索补充来源、记忆召回、LLM 决策和价格解析。",
             int((time.perf_counter() - stage) * 1000),
         )
     )
@@ -479,7 +479,7 @@ def run_deal_research(query: str) -> dict[str, Any]:
 
     stage = time.perf_counter()
     report = _report(run_id, query, product, questions, evidence, context, decision, legacy, agent_runs)
-    steps.append(ResearchStep("publisher", "生成可展示的购买研究报告，并保留省钱智探核心判断。", int((time.perf_counter() - stage) * 1000)))
+    steps.append(ResearchStep("publisher", "生成可展示的购买研究报告，并保留旧版省钱智探通道判断。", int((time.perf_counter() - stage) * 1000)))
 
     run = DealResearchRun(
         run_id=run_id,
