@@ -161,7 +161,7 @@ def _render_top_query(run_deal_research) -> None:
             try:
                 st.session_state["PRO_DEAL_RUN"] = run_deal_research(query.strip())
                 st.session_state["ACTION_COMPLETED"] = False
-                st.toast("研究报告已生成", icon="OK")
+                st.toast("研究报告已生成")
             except Exception as err:
                 st.error(f"运行失败：{err}")
 

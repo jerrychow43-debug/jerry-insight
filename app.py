@@ -16,6 +16,19 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 # =====================================================================
 st.set_page_config(page_title="省钱智探agent", layout="wide", page_icon="🛡️")
 
+# Streamlit toast 的 icon 参数只能是合法 emoji。这里做一层兜底，避免旧模块或热加载残留传入 "OK" 之类字符串导致整页报错。
+_RAW_STREAMLIT_TOAST = st.toast
+
+def safe_toast(body, icon=None):
+    try:
+        return _RAW_STREAMLIT_TOAST(body, icon=icon)
+    except Exception as err:
+        if "not a valid emoji" in str(err):
+            return _RAW_STREAMLIT_TOAST(body)
+        raise
+
+st.toast = safe_toast
+
 # 核心状态机状态保持
 if "active_query" not in st.session_state:
     st.session_state["active_query"] = None
