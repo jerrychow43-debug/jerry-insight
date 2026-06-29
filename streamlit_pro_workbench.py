@@ -294,6 +294,10 @@ def _render_sources_and_history(run: dict[str, Any], list_ledger, list_blocked_i
 
 
 def render_streamlit_pro_workbench(callback_confirm, callback_cancel, get_dynamic_profile):
+    expected_version = "real_tavily_v1"
+    if st.session_state.get("PRO_WORKBENCH_VERSION") != expected_version:
+        st.session_state["PRO_WORKBENCH_VERSION"] = expected_version
+        st.session_state.pop("PRO_DEAL_RUN", None)
     run_deal_research, list_ledger, list_blocked_items, list_history = _load_fullstack_deal_tools()
     _inject_style()
 

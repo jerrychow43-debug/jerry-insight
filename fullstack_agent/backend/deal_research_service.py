@@ -239,70 +239,6 @@ def _normalize_crawler_sources(rows: list[dict[str, Any]]) -> list[dict[str, str
         }
         for row in rows or []
     ]
-def _fallback_search_sources(product: str) -> list[dict[str, Any]]:
-    encoded = product.strip().replace(" ", "+") or "显示器"
-    return [
-        {
-            "summary": f"旧省钱智探通道未拿到实时 Tavily 摘要，保留 {product} 在什么值得买的人工核验入口。",
-            "url": f"https://search.smzdm.com/?s={encoded}",
-            "score": 0.88,
-        },
-        {
-            "summary": f"旧省钱智探通道未拿到实时 Tavily 摘要，保留 {product} 在京东的人工核验入口。",
-            "url": f"https://search.jd.com/Search?keyword={encoded}",
-            "score": 0.84,
-        },
-        {
-            "summary": f"旧省钱智探通道未拿到实时 Tavily 摘要，保留 {product} 在淘宝的人工核验入口。",
-            "url": f"https://s.taobao.com/search?q={encoded}",
-            "score": 0.80,
-        },
-        {
-            "summary": f"旧省钱智探通道未拿到实时 Tavily 摘要，保留 {product} 在百度搜索的人工核验入口。",
-            "url": f"https://www.baidu.com/s?wd={encoded}+价格+测评+避坑",
-            "score": 0.76,
-        },
-    ]
-
-
-def _fallback_price_table(product: str, estimated_price: float) -> list[dict[str, str]]:
-    encoded = product.strip().replace(" ", "+") or "显示器"
-    price_text = f"约 {estimated_price:.1f} 元" if estimated_price else "待核验"
-    return [
-        {
-            "platform": "旧通道估算",
-            "info": f"旧省钱智探通道给出的估算价：{price_text}；实时价格需要打开来源页核验。",
-            "price_text": price_text,
-            "title": f"{product} 估算价格",
-            "domain": "local-audit",
-            "url": "",
-        },
-        {
-            "platform": "什么值得买",
-            "info": "外部搜索未返回结构化价格，保留人工核验入口。",
-            "price_text": "",
-            "title": f"{product} 值得买搜索",
-            "domain": "smzdm.com",
-            "url": f"https://search.smzdm.com/?s={encoded}",
-        },
-        {
-            "platform": "京东 JD",
-            "info": "外部搜索未返回结构化价格，保留人工核验入口。",
-            "price_text": "",
-            "title": f"{product} 京东搜索",
-            "domain": "jd.com",
-            "url": f"https://search.jd.com/Search?keyword={encoded}",
-        },
-        {
-            "platform": "淘宝 Taobao",
-            "info": "外部搜索未返回结构化价格，保留人工核验入口。",
-            "price_text": "",
-            "title": f"{product} 淘宝搜索",
-            "domain": "taobao.com",
-            "url": f"https://s.taobao.com/search?q={encoded}",
-        },
-    ]
-
 
 def _evidence_from_legacy(product: str, legacy: dict[str, Any]) -> list[EvidenceItem]:
     evidence: list[EvidenceItem] = []
@@ -515,18 +451,11 @@ def run_deal_research(query: str) -> dict[str, Any]:
     budget = _extract_budget(query)
     product = original.get("item") or "待研究商品"
     questions = _plan_questions(product)
-    search_sources = _normalize_search_sources(search_payload.get("info_blocks") or original.get("info_blocks") or [])
-    price_table = _normalize_price_table(search_payload.get("price_table_data") or original.get("price_table_data") or [], budget)
-    estimated_price = float(original.get("price") or 0)
-    if not search_sources:
-        search_sources = _fallback_search_sources(product)
-    if not price_table:
-        price_table = _fallback_price_table(product, estimated_price)
     legacy = {
         "display_answer": original.get("display_answer") or "",
-        "estimated_price": estimated_price,
-        "search_sources": search_sources,
-        "price_table": price_table,
+        "estimated_price": float(original.get("price") or 0),
+        "search_sources": _normalize_search_sources(search_payload.get("info_blocks") or original.get("info_blocks") or []),
+        "price_table": _normalize_price_table(search_payload.get("price_table_data") or original.get("price_table_data") or [], budget),
         "crawler_sources": _normalize_crawler_sources(original.get("crawler_results") or []),
         "long_term_context": original.get("long_term_context") or "",
         "memory_hits": original.get("memory_hits") or [],
